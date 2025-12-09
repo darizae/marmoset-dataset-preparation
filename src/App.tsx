@@ -15,6 +15,7 @@ import SummaryTable from './components/SummaryTable';
 import ErrorList from './components/ErrorList';
 import ProcessPanel from './components/ProcessPanel';
 import ExportPanel from './components/ExportPanel';
+import TrialGenerationTab from './components/TrialGenerationTab';
 
 function inferFolderLabel(files: File[]): string {
     if (!files.length) return 'No folder selected';
@@ -24,7 +25,11 @@ function inferFolderLabel(files: File[]): string {
     return rel.split('/')[0];
 }
 
+type Tab = 'prepare' | 'trials';
+
 const App: React.FC = () => {
+    const [activeTab, setActiveTab] = useState<Tab>('prepare');
+
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [folderLabel, setFolderLabel] = useState<string>('No folder selected');
 
@@ -43,7 +48,6 @@ const App: React.FC = () => {
     const [fileErrors, setFileErrors] = useState<FileError[]>([]);
 
     const handleFolderChange = useCallback((files: FileList | null) => {
-        // Full reset of folder-dependent state when user picks a new folder
         setSelectedFiles([]);
         setFolderLabel('No folder selected');
         setCsvRows(null);
@@ -151,212 +155,189 @@ const App: React.FC = () => {
                     </p>
                 </header>
 
-                {/* Top-level documentation: CSV + media requirements */}
-                <section className="section">
-                    <div className="section-title">Overview: what this tool expects</div>
-                    <div className="section-subtitle">
-                        The selected folder is treated as a self-contained dataset root: it must contain
-                        <code> data_info.csv</code> and all media files (JPG and WAV) used in the manifest.
-                    </div>
+                <div className="inline-input-row" style={{ marginBottom: '0.5rem' }}>
+                    <button
+                        className="button"
+                        onClick={() => setActiveTab('prepare')}
+                        disabled={activeTab === 'prepare'}
+                    >
+                        Dataset preparation
+                    </button>
+                    <button
+                        className="button"
+                        onClick={() => setActiveTab('trials')}
+                        disabled={activeTab === 'trials'}
+                    >
+                        Trial generation
+                    </button>
+                </div>
 
-                    <div className="small-text" style={{ marginTop: '0.4rem', fontWeight: 600 }}>
-                        1) data_info.csv (identities and metadata)
-                    </div>
-                    <ul className="small-text">
-                        <li>
-                            File name must be exactly <code>data_info.csv</code>.
-                        </li>
-                        <li>
-                            It must live directly inside the selected folder (not in a subdirectory).
-                        </li>
-                        <li>
-                            It defines all valid identities. Media files referring to IDs not present in this CSV
-                            will be ignored and explicitly flagged.
-                        </li>
-                    </ul>
-                    <ul className="small-text">
-                        <li>
-                            Required column (by name, case-sensitive): <code>ID</code> – string; animal identity,
-                            letters only (e.g. <code>A</code>, <code>B</code>, <code>Odin</code>).
-                        </li>
-                        <li>
-                            Strongly recommended columns:
-                            <ul>
+                {activeTab === 'prepare' && (
+                    <>
+                        <section className="section">
+                            <div className="section-title">Overview: what this tool expects</div>
+                            <div className="section-subtitle">
+                                The selected folder is treated as a self-contained dataset root: it must contain
+                                <code> data_info.csv</code> and all media files (JPG and WAV) used in the manifest.
+                            </div>
+
+                            <div className="small-text" style={{ marginTop: '0.4rem', fontWeight: 600 }}>
+                                1) data_info.csv (identities and metadata)
+                            </div>
+                            <ul className="small-text">
                                 <li>
-                                    <code>familiarity</code> – e.g. <code>familiar</code> / <code>unfamiliar</code>.
+                                    File name must be exactly <code>data_info.csv</code>.
                                 </li>
                                 <li>
-                                    <code>partner_ID</code> – ID of partner or empty.
+                                    It must live directly inside the selected folder (not in a subdirectory).
                                 </li>
                                 <li>
-                                    <code>sex</code> – e.g. <code>m</code> or <code>f</code>.
-                                </li>
-                                <li>
-                                    <code>focal</code> – integer; <code>1</code> for focal/subject animals,{' '}
-                                    <code>0</code> otherwise.
+                                    It defines all valid identities. Media files referring to IDs not present in this CSV
+                                    will be ignored and explicitly flagged.
                                 </li>
                             </ul>
-                        </li>
-                        <li>Additional columns are allowed and will be preserved as properties.</li>
-                    </ul>
+                            <ul className="small-text">
+                                <li>
+                                    Required column (by name, case-sensitive): <code>ID</code> – string; animal identity,
+                                    letters only (e.g. <code>A</code>, <code>B</code>, <code>Odin</code>).
+                                </li>
+                                <li>
+                                    Strongly recommended columns:
+                                    <ul>
+                                        <li>
+                                            <code>familiarity</code> – e.g. <code>familiar</code> / <code>unfamiliar</code>.
+                                        </li>
+                                        <li>
+                                            <code>partner_ID</code> – ID of partner or empty.
+                                        </li>
+                                        <li>
+                                            <code>sex</code> – e.g. <code>m</code> or <code>f</code>.
+                                        </li>
+                                        <li>
+                                            <code>focal</code> – integer; <code>1</code> for focal/subject animals, <code>0</code> otherwise.
+                                        </li>
+                                    </ul>
+                                </li>
+                                <li>Additional columns are allowed and will be preserved as properties.</li>
+                            </ul>
 
-                    <div className="small-text" style={{ marginTop: '0.35rem' }}>
-                        Minimal example:
-                    </div>
-                    <pre
-                        style={{
-                            whiteSpace: 'pre',
-                            fontSize: '0.78rem',
-                            marginTop: '0.35rem',
-                            padding: '0.5rem',
-                            borderRadius: '0.5rem',
-                            border: '1px solid #1f2937',
-                            background: '#020617'
-                        }}
-                    >
-            {`ID,familiarity,partner_ID,sex,focal
+                            <div className="small-text" style={{ marginTop: '0.35rem' }}>
+                                Minimal example:
+                            </div>
+                            <pre
+                                style={{
+                                    whiteSpace: 'pre',
+                                    fontSize: '0.78rem',
+                                    marginTop: '0.35rem',
+                                    padding: '0.5rem',
+                                    borderRadius: '0.5rem',
+                                    border: '1px solid #1f2937',
+                                    background: '#020617'
+                                }}
+                            >{`ID,familiarity,partner_ID,sex,focal
 A,familiar,B,f,1
 B,familiar,A,f,1
 C,familiar,D,m,1
 D,familiar,C,m,1
 Lola,unfamiliar,,f,0
-Odin,unfamiliar,,m,0`}
-          </pre>
+Odin,unfamiliar,,m,0`}</pre>
 
-                    <div className="small-text" style={{ marginTop: '0.8rem', fontWeight: 600 }}>
-                        2) Media files (JPG images and WAV audio)
-                    </div>
-                    <ul className="small-text">
-                        <li>
-                            All media files must live <strong>inside the selected folder</strong> (subdirectories
-                            are allowed) when you choose it in the browser.
-                        </li>
-                        <li>
-                            Only files with extensions <code>.jpg</code> / <code>.jpeg</code> (images) and{' '}
-                            <code>.wav</code> (audio) are considered. Everything else is ignored.
-                        </li>
-                        <li>
-                            File naming is strict: <code>&lt;ID&gt;&lt;index&gt;.EXT</code>, where:
-                            <ul>
+                            <div className="small-text" style={{ marginTop: '0.8rem', fontWeight: 600 }}>
+                                2) Media files (JPG images and WAV audio)
+                            </div>
+                            <ul className="small-text">
                                 <li>
-                                    <code>&lt;ID&gt;</code> = one or more letters only (no underscores, no digits).
-                                    Must match an <code>ID</code> from <code>data_info.csv</code> exactly (case-sensitive).
+                                    All media files must live <strong>inside the selected folder</strong> (subdirectories are allowed) when you choose it in the browser.
                                 </li>
                                 <li>
-                                    <code>&lt;index&gt;</code> = one or more digits (e.g. 1, 2, 3, ...).
+                                    Only files with extensions <code>.jpg</code> / <code>.jpeg</code> and <code>.wav</code> are considered. Everything else is ignored.
                                 </li>
                                 <li>
-                                    <code>EXT</code> = <code>jpg</code>, <code>jpeg</code> or <code>wav</code>.
+                                    File naming is strict: <code>&lt;ID&gt;&lt;index&gt;.EXT</code>, where:
+                                    <ul>
+                                        <li>
+                                            <code>&lt;ID&gt;</code> = one or more letters only. Must match an <code>ID</code> from <code>data_info.csv</code> exactly.
+                                        </li>
+                                        <li>
+                                            <code>&lt;index&gt;</code> = digits.
+                                        </li>
+                                        <li>
+                                            <code>EXT</code> = <code>jpg</code>, <code>jpeg</code> or <code>wav</code>.
+                                        </li>
+                                    </ul>
                                 </li>
-                            </ul>
-                        </li>
-                        <li>
-                            Examples of valid names:
-                            <ul>
                                 <li>
-                                    <code>A1.jpg</code>, <code>A2.jpg</code>, <code>B5.wav</code>,{' '}
-                                    <code>Odin3.jpg</code>, <code>Lola1.wav</code>.
+                                    Examples of valid names: <code>A1.jpg</code>, <code>B5.wav</code>, <code>Odin3.jpg</code>.
+                                </li>
+                                <li>
+                                    Invalid names will be flagged, e.g. <code>A_1.jpg</code>, case mismatches, or duplicate indexes.
+                                </li>
+                                <li>
+                                    Media files referring to an <code>ID</code> not present in <code>data_info.csv</code> are ignored and reported as warnings.
                                 </li>
                             </ul>
-                        </li>
-                        <li>
-                            Examples of invalid names (will be flagged with explicit errors):
-                            <ul>
-                                <li>
-                                    <code>A_1.jpg</code> (underscore not allowed).
-                                </li>
-                                <li>
-                                    <code>a1.jpg</code> if <code>ID</code> in CSV is <code>A</code> (case mismatch).
-                                </li>
-                                <li>
-                                    <code>A01.jpg</code> is technically allowed, but must not duplicate an existing{' '}
-                                    <code>A1.jpg</code> index; each index must be unique per ID.
-                                </li>
-                                <li>
-                                    <code>OdinA.jpg</code> (index must be digits, not letters).
-                                </li>
-                            </ul>
-                        </li>
-                        <li>
-                            Every exemplar index must be unique per identity: you cannot have both{' '}
-                            <code>A1.jpg</code> and <code>A1.wav</code> and also treat them as different exemplars
-                            for A1; the app disallows duplicate indexes per ID and file type.
-                        </li>
-                        <li>
-                            Media files referring to an <code>ID</code> not present in <code>data_info.csv</code>{' '}
-                            are ignored and reported as warnings.
-                        </li>
-                    </ul>
 
-                    <div className="small-text" style={{ marginTop: '0.4rem' }}>
-                        During processing, the app counts image and audio exemplars per identity and flags any
-                        identity with fewer files than your expected counts.
-                    </div>
-                </section>
+                            <div className="small-text" style={{ marginTop: '0.4rem' }}>
+                                During processing, the app counts image and audio exemplars per identity and flags any identity with fewer files than your expected counts.
+                            </div>
+                        </section>
 
-                {/* Folder selection */}
-                <section className="section">
-                    <div className="section-title">1. Select example data folder</div>
-                    <div className="section-subtitle">
-                        Choose the folder that contains <code>data_info.csv</code> and all{' '}
-                        <code>.jpg/.jpeg</code> and <code>.wav</code> files. The tool will inspect <strong>all</strong>{' '}
-                        files inside that folder (including subdirectories) and strictly enforce the naming
-                        rules described above.
-                    </div>
-                    <FolderSelector onFolderChange={handleFolderChange} folderLabel={folderLabel} />
-                    <div className="small-text" style={{ marginTop: '0.5rem' }}>
-                        Total files: {folderSummary.totalFiles} · data_info.csv: {folderSummary.csvCount} · JPG:{' '}
-                        {folderSummary.jpgCount} · WAV: {folderSummary.wavCount}
-                    </div>
-                </section>
+                        <section className="section">
+                            <div className="section-title">1. Select example data folder</div>
+                            <div className="section-subtitle">
+                                Choose the folder that contains <code>data_info.csv</code> and all <code>.jpg/.jpeg</code> and <code>.wav</code> files.
+                            </div>
+                            <FolderSelector onFolderChange={handleFolderChange} folderLabel={folderLabel} />
+                            <div className="small-text" style={{ marginTop: '0.5rem' }}>
+                                Total files: {folderSummary.totalFiles} · data_info.csv: {folderSummary.csvCount} · JPG: {folderSummary.jpgCount} · WAV: {folderSummary.wavCount}
+                            </div>
+                        </section>
 
-                {/* CSV status */}
-                <section className="section">
-                    <div className="section-title">2. data_info.csv status</div>
-                    <DataInfoWarning csvOk={csvOk} csvError={csvError} />
-                </section>
+                        <section className="section">
+                            <div className="section-title">2. data_info.csv status</div>
+                            <DataInfoWarning csvOk={csvOk} csvError={csvError} />
+                        </section>
 
-                {/* Expected counts */}
-                <section className="section">
-                    <div className="section-title">3. Expected exemplar counts</div>
-                    <SettingsPanel
-                        expectedImages={expectedImages}
-                        expectedAudios={expectedAudios}
-                        setExpectedImages={setExpectedImages}
-                        setExpectedAudios={setExpectedAudios}
-                    />
-                </section>
+                        <section className="section">
+                            <div className="section-title">3. Expected exemplar counts</div>
+                            <SettingsPanel
+                                expectedImages={expectedImages}
+                                expectedAudios={expectedAudios}
+                                setExpectedImages={setExpectedImages}
+                                setExpectedAudios={setExpectedAudios}
+                            />
+                        </section>
 
-                {/* Processing */}
-                <section className="section">
-                    <div className="section-title">4. Process dataset</div>
-                    <ProcessPanel
-                        onProcess={handleProcess}
-                        processing={processing}
-                        canProcess={!!csvRows && selectedFiles.length > 0}
-                        processError={processError}
-                    />
-                    <ErrorList warnings={generalWarnings} fileErrors={fileErrors} />
-                </section>
+                        <section className="section">
+                            <div className="section-title">4. Process dataset</div>
+                            <ProcessPanel
+                                onProcess={handleProcess}
+                                processing={processing}
+                                canProcess={!!csvRows && selectedFiles.length > 0}
+                                processError={processError}
+                            />
+                            <ErrorList warnings={generalWarnings} fileErrors={fileErrors} />
+                        </section>
 
-                {/* Summary table */}
-                <section className="section">
-                    <div className="section-title">5. Summary table (per identity)</div>
-                    <div className="section-subtitle">
-                        Shows counts per ID based on <code>data_info.csv</code> and the strict media naming
-                        conventions.
-                    </div>
-                    <SummaryTable manifest={manifest} />
-                </section>
+                        <section className="section">
+                            <div className="section-title">5. Summary table (per identity)</div>
+                            <div className="section-subtitle">
+                                Shows counts per ID based on <code>data_info.csv</code> and the strict media naming conventions.
+                            </div>
+                            <SummaryTable manifest={manifest} />
+                        </section>
 
-                {/* Export */}
-                <section className="section">
-                    <div className="section-title">6. Export manifest</div>
-                    <div className="section-subtitle">
-                        Download the processed dataset as JSON or CSV (one row per identity).
-                    </div>
-                    <ExportPanel manifest={manifest} />
-                </section>
+                        <section className="section">
+                            <div className="section-title">6. Export manifest</div>
+                            <div className="section-subtitle">
+                                Download the processed dataset as JSON or CSV (one row per identity).
+                            </div>
+                            <ExportPanel manifest={manifest} />
+                        </section>
+                    </>
+                )}
+
+                {activeTab === 'trials' && <TrialGenerationTab />}
             </div>
         </div>
     );

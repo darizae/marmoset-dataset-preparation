@@ -43,6 +43,7 @@ const App: React.FC = () => {
     const [fileErrors, setFileErrors] = useState<FileError[]>([]);
 
     const handleFolderChange = useCallback((files: FileList | null) => {
+        // Full reset of folder-dependent state
         setSelectedFiles([]);
         setFolderLabel('No folder selected');
         setCsvRows(null);
@@ -149,6 +150,58 @@ const App: React.FC = () => {
                         <span className="chip">WAV</span> + <span className="chip">data_info.csv</span>.
                     </p>
                 </header>
+
+                {/* NEW: minimal doc for data_info.csv */}
+                <section className="section">
+                    <div className="section-title">data_info.csv requirements (minimal)</div>
+                    <div className="section-subtitle">
+                        The tool assumes a single CSV file named <code>data_info.csv</code> in the selected
+                        folder, defining all identities. Extra columns are allowed, but at least the following
+                        are strongly recommended:
+                    </div>
+                    <ul className="small-text">
+                        <li>
+                            <code>ID</code> – string; animal identity, letters only (e.g. <code>A</code>,{' '}
+                            <code>B</code>, <code>Odin</code>).
+                        </li>
+                        <li>
+                            <code>familiarity</code> – string; e.g. <code>familiar</code> / <code>unfamiliar</code>
+                            .
+                        </li>
+                        <li>
+                            <code>partner_ID</code> – string; ID of partner or empty.
+                        </li>
+                        <li>
+                            <code>sex</code> – string; e.g. <code>m</code> or <code>f</code>.
+                        </li>
+                        <li>
+                            <code>focal</code> – integer; <code>1</code> for focal/subject animals,{' '}
+                            <code>0</code> otherwise.
+                        </li>
+                    </ul>
+                    <div className="small-text" style={{ marginTop: '0.35rem' }}>
+                        A minimal example:
+                    </div>
+                    <pre
+                        style={{
+                            whiteSpace: 'pre',
+                            fontSize: '0.78rem',
+                            marginTop: '0.35rem',
+                            padding: '0.5rem',
+                            borderRadius: '0.5rem',
+                            border: '1px solid #1f2937',
+                            background: '#020617'
+                        }}
+                    >
+            {`ID,familiarity,partner_ID,sex,focal
+A,familiar,B,f,1
+B,familiar,A,f,1
+C,familiar,D,m,1
+D,familiar,C,m,1
+Lola,unfamiliar,,f,0
+Odin,unfamiliar,,m,0`}
+          </pre>
+                </section>
 
                 <section className="section">
                     <div className="section-title">1. Select example data folder</div>

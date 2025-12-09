@@ -16,6 +16,7 @@ import ErrorList from './components/ErrorList';
 import ProcessPanel from './components/ProcessPanel';
 import ExportPanel from './components/ExportPanel';
 import TrialGenerationTab from './components/TrialGenerationTab';
+import ResultsTab from "./components/ResultsTab";
 
 function inferFolderLabel(files: File[]): string {
     if (!files.length) return 'No folder selected';
@@ -25,7 +26,7 @@ function inferFolderLabel(files: File[]): string {
     return rel.split('/')[0];
 }
 
-type Tab = 'prepare' | 'trials';
+type Tab = 'prepare' | 'trials' | 'results';
 
 const App: React.FC = () => {
     const [activeTab, setActiveTab] = useState<Tab>('prepare');
@@ -155,7 +156,7 @@ const App: React.FC = () => {
                     </p>
                 </header>
 
-                <div className="inline-input-row" style={{ marginBottom: '0.5rem' }}>
+                <div className="inline-input-row" style={{marginBottom: '0.5rem'}}>
                     <button
                         className="button"
                         onClick={() => setActiveTab('prepare')}
@@ -169,6 +170,13 @@ const App: React.FC = () => {
                         disabled={activeTab === 'trials'}
                     >
                         Trial generation
+                    </button>
+                    <button
+                        className="button"
+                        onClick={() => setActiveTab('results')}
+                        disabled={activeTab === 'results'}
+                    >
+                        Results
                     </button>
                 </div>
 
@@ -338,6 +346,7 @@ Odin,unfamiliar,,m,0`}</pre>
                 )}
 
                 {activeTab === 'trials' && <TrialGenerationTab />}
+                {activeTab === 'results' && <ResultsTab />}
             </div>
         </div>
     );

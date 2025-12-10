@@ -26,12 +26,14 @@ const LatencyDistributionChart: React.FC<Props> = ({ series }) => {
             <Plot
                 data={data}
                 layout={{
-                    title: 'Latency distribution per animal',
-                    yaxis: { title: 'Latency (s)' },
+                    // explicit object title
+                    title: { text: 'Latency distribution per animal' },
+                    yaxis: { title: { text: 'Latency (s)' } },
+                    xaxis: { title: { text: 'Subject' } },
                     paper_bgcolor: '#020617',
                     plot_bgcolor: '#020617',
                     font: { color: '#e5e7eb' },
-                    margin: { l: 50, r: 20, t: 40, b: 40 }
+                    margin: { l: 60, r: 30, t: 60, b: 50 }
                 }}
                 useResizeHandler
                 style={{ width: '100%', height: '340px' }}

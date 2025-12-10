@@ -17,17 +17,24 @@ const AccuracyBarChart: React.FC<Props> = ({ labels, accuracies }) => {
                         x: labels,
                         y: vals,
                         marker: { color: '#22c55e' },
+                        name: 'Accuracy',
                         hovertemplate: '%{x}<br>Accuracy: %{y:.2f}<extra></extra>'
                     }
                 ]}
                 layout={{
-                    title: 'Accuracy per animal',
-                    yaxis: { range: [0, 1], title: 'Accuracy', tickformat: '.0%' },
-                    xaxis: { title: 'Subject' },
+                    title: { text: 'Accuracy per animal' },
+                    yaxis: {
+                        range: [0, 1],
+                        title: { text: 'Accuracy' },
+                        tickformat: '.0%'
+                    },
+                    xaxis: {
+                        title: { text: 'Subject' }
+                    },
                     paper_bgcolor: '#020617',
                     plot_bgcolor: '#020617',
                     font: { color: '#e5e7eb' },
-                    margin: { l: 50, r: 20, t: 40, b: 40 }
+                    margin: { l: 60, r: 30, t: 60, b: 50 }
                 }}
                 useResizeHandler
                 style={{ width: '100%', height: '300px' }}

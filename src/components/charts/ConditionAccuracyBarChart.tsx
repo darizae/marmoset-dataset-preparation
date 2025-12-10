@@ -18,17 +18,25 @@ const ConditionAccuracyBarChart: React.FC<Props> = ({ subjectId, labels, accurac
                         x: labels,
                         y: vals,
                         marker: { color: '#38bdf8' },
+                        name: 'Accuracy',
                         hovertemplate: '%{x}<br>Accuracy: %{y:.2f}<extra></extra>'
                     }
                 ]}
                 layout={{
-                    title: `Per-condition accuracy (${subjectId})`,
-                    yaxis: { range: [0, 1], title: 'Accuracy', tickformat: '.0%' },
-                    xaxis: { title: 'Condition' },
+                    // explicit object for title
+                    title: { text: `Per-condition accuracy (${subjectId})` },
+                    yaxis: {
+                        range: [0, 1],
+                        title: { text: 'Accuracy' },
+                        tickformat: '.0%'
+                    },
+                    xaxis: {
+                        title: { text: 'Condition' }
+                    },
                     paper_bgcolor: '#020617',
                     plot_bgcolor: '#020617',
                     font: { color: '#e5e7eb' },
-                    margin: { l: 50, r: 20, t: 40, b: 40 }
+                    margin: { l: 60, r: 30, t: 60, b: 50 }
                 }}
                 useResizeHandler
                 style={{ width: '100%', height: '300px' }}

@@ -57,7 +57,6 @@ const ResultsTab: React.FC = () => {
         setWarnings(allWarnings);
         setErrors(allErrors);
         setStatus('done');
-        // default selection: first subject found
         const subjects = Array.from(new Set(parsed.flatMap((f) => f.subjects))).sort();
         setSelectedSubject(subjects[0] || '');
     }, []);
@@ -80,11 +79,6 @@ const ResultsTab: React.FC = () => {
     const accuracies = useMemo(() => {
         return combined.subjects.map((m) => m.accuracy);
     }, [combined]);
-
-    const latenciesBySubjectForChart = useMemo(() => {
-        // separate component covers latencies; here we only need accuracy chart
-        return [];
-    }, [allRows]);
 
     const clearAll = useCallback(() => {
         setStatus('idle');

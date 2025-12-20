@@ -342,7 +342,7 @@ const BundleTab: React.FC = () => {
     return (
         <div>
             <section className="section" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none' }}>
-                <div className="section-title">Deployable multi-subject Bundle builder + visual explorer</div>
+                <div className="section-title">Trials Bundle builder + visual explorer</div>
                 <div className="section-subtitle">
                     Build mode: select a dataset folder, generate trials for one or many subjects, inspect trials + media, then download one bundle zip.
                     Visualize mode: load an existing bundle directory and explore/verify it without regeneration.
@@ -350,7 +350,7 @@ const BundleTab: React.FC = () => {
 
                 <div className="inline-input-row">
                     <button className="button" disabled={mode === 'build'} onClick={() => onSwitchMode('build')}>
-                        Build a bundle
+                        Build a trials bundle
                     </button>
                     <button className="button" disabled={mode === 'visualize'} onClick={() => onSwitchMode('visualize')}>
                         Visualize an existing bundle
@@ -408,7 +408,7 @@ const BundleTab: React.FC = () => {
                                 <FolderSelector onFolderChange={onDatasetFolderChange} folderLabel={datasetFolderLabel} />
                                 {csvError && <div className="error-item" style={{ marginTop: '0.5rem' }}>{csvError}</div>}
                                 <div className="small-text" style={{ marginTop: '0.5rem' }}>
-                                    This tab builds the manifest in-memory and blocks bundle creation on strict file errors.
+                                    Trials are generated in-memory inside this workflow; the output is a single deployable bundle zip.
                                 </div>
                             </div>
                         )}

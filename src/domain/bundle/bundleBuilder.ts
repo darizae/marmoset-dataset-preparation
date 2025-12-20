@@ -1,7 +1,6 @@
 import JSZip from 'jszip';
 import { DatasetManifest, IdentityDatasetEntry } from '../types';
 import { TrialConfig, TrialSet } from '../trialTypes';
-import { createRng, pickOne } from '../rng';
 import { generateTrials } from '../trialGenerator';
 import { BundleInMemory, BundleSeedPolicy, DatasetMeta } from './bundleTypes';
 import {
@@ -261,16 +260,4 @@ export async function downloadBundleZip(bundle: BundleInMemory, fileNameBase: st
 export function chooseDefaultDatasetId(sourceLabel: string): string {
     const s = sourceLabel.trim();
     return s.length ? s : 'dataset';
-}
-
-export function suggestOverridesFromSelection(subjectIds: string[], globalSeed: string): Record<string, string> {
-    const rng = createRng(`${globalSeed}::overrides`);
-    const out: Record<string, string> = {};
-    for (const sid of subjectIds) {
-        const shouldPreFill = rng.next() < 0.0;
-        if (shouldPreFill) {
-            out[sid] = pickOne([`${globalSeed}::${sid}`], rng);
-        }
-    }
-    return out;
 }

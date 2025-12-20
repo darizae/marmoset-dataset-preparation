@@ -1,16 +1,8 @@
 import React from 'react';
-import { save } from '@tauri-apps/plugin-dialog';
-import { writeTextFile } from '@tauri-apps/plugin-fs';
-import { TrialSet, Trial } from '../domain/trialTypes';
+import { TrialSet } from '../domain/trialTypes';
 
 interface Props {
     trialSet: TrialSet | null;
-}
-
-function isTauriEnvironment(): boolean {
-    if (typeof window === 'undefined') return false;
-    const w = window as any;
-    return !!(w.__TAURI__ || w.__TAURI_INTERNALS__);
 }
 
 function downloadBlob(content: Blob, filename: string) {
@@ -94,41 +86,15 @@ const TrialExportPanel: React.FC<Props> = ({ trialSet }) => {
     const handleExportJson = async () => {
         if (!trialSet) return;
         const jsonStr = stringifyJson(trialSet);
-        if (isTauriEnvironment()) {
-            try {
-                const filePath = await save({
-                    defaultPath: 'trials.json',
-                    filters: [{ name: 'JSON file', extensions: ['json'] }]
-                });
-                if (!filePath) return;
-                await writeTextFile(filePath, jsonStr);
-            } catch {
-                alert('Error during Tauri JSON export.');
-            }
-        } else {
-            const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
-            downloadBlob(blob, 'trials.json');
-        }
+        const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+        downloadBlob(blob, 'trials.json');
     };
 
     const handleExportCsv = async () => {
         if (!trialSet) return;
         const csvStr = trialsToCsv(trialSet);
-        if (isTauriEnvironment()) {
-            try {
-                const filePath = await save({
-                    defaultPath: 'trials.csv',
-                    filters: [{ name: 'CSV file', extensions: ['csv'] }]
-                });
-                if (!filePath) return;
-                await writeTextFile(filePath, csvStr);
-            } catch {
-                alert('Error during Tauri CSV export.');
-            }
-        } else {
-            const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8' });
-            downloadBlob(blob, 'trials.csv');
-        }
+        const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8' });
+        downloadBlob(blob, 'trials.csv');
     };
 
     return (

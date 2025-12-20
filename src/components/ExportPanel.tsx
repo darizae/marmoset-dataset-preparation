@@ -1,7 +1,5 @@
 import React from 'react';
 import { DatasetManifest, IdentityDatasetEntry } from '../domain/types';
-import { save } from '@tauri-apps/plugin-dialog';
-import { writeTextFile } from '@tauri-apps/plugin-fs';
 
 interface Props {
     manifest: DatasetManifest | null;
@@ -82,72 +80,19 @@ function manifestToCsv(manifest: DatasetManifest): string {
     return rows.join('\n');
 }
 
-function isTauriEnvironment(): boolean {
-    if (typeof window === 'undefined') return false;
-    const w = window as any;
-    return !!(w.__TAURI__ || w.__TAURI_INTERNALS__);
-}
-
 const ExportPanel: React.FC<Props> = ({ manifest }) => {
     const handleExportJson = async () => {
         if (!manifest) return;
         const jsonStr = stringifyManifest(manifest);
-
-        console.log('[Export] Export JSON clicked. isTauriEnvironment =', isTauriEnvironment());
-
-        if (isTauriEnvironment()) {
-            try {
-                const filePath = await save({
-                    defaultPath: 'dataset_manifest.json',
-                    filters: [{ name: 'JSON file', extensions: ['json'] }]
-                });
-
-                console.log('[Export] save() returned path:', filePath);
-
-                if (!filePath) {
-                    console.log('[Export] User cancelled JSON save dialog.');
-                    return;
-                }
-
-                await writeTextFile(filePath, jsonStr);
-                console.log('[Export] JSON written to', filePath);
-            } catch (err) {
-                console.error('[Export] Error during Tauri JSON export:', err);
-                alert('Error during Tauri JSON export. See console for details.');
-            }
-        } else {
-            console.log('[Export] Not in Tauri, using browser download for JSON.');
-            const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
-            downloadBlob(blob, 'dataset_manifest.json');
-        }
+        const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+        downloadBlob(blob, 'dataset_manifest.json');
     };
 
     const handleExportCsv = async () => {
         if (!manifest) return;
         const csvStr = manifestToCsv(manifest);
-
-        console.log('[Export] Export CSV clicked. isTauriEnvironment =', isTauriEnvironment());
-
-        if (isTauriEnvironment()) {
-            try {
-                const filePath = await save({
-                    defaultPath: 'dataset_manifest.csv',
-                    filters: [{ name: 'CSV file', extensions: ['csv'] }]
-                });
-
-                if (!filePath) {
-                    console.log('[Export] User cancelled CSV save dialog.');
-                    return;
-                }
-
-                await writeTextFile(filePath, csvStr);
-            } catch (err) {
-                console.error('[Export] Error during Tauri CSV export:', err);
-            }
-        } else {
-            const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8' });
-            downloadBlob(blob, 'dataset_manifest.csv');
-        }
+        const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8' });
+        downloadBlob(blob, 'dataset_manifest.csv');
     };
 
     return (

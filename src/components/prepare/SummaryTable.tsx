@@ -1,5 +1,5 @@
 import React from 'react';
-import { DatasetManifest, IdentityDatasetEntry } from '../domain/types';
+import { DatasetManifest, IdentityDatasetEntry } from '../../domain/types';
 
 interface Props {
     manifest: DatasetManifest | null;

@@ -1,8 +1,8 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import ResultFileList from './ResultFileList';
-import { parseResultsCsv, parseResultsJsonl } from '../domain/resultsParser';
-import { ParsedResultFile, ResultRow } from '../domain/resultsTypes';
-import { computeCombinedMetrics } from '../domain/resultsMetrics';
+import { parseResultsCsv, parseResultsJsonl } from '../../domain/resultsParser';
+import { ParsedResultFile, ResultRow } from '../../domain/resultsTypes';
+import { computeCombinedMetrics } from '../../domain/resultsMetrics';
 import AccuracyBarChart from './charts/AccuracyBarChart';
 import ResultsDetailView from './ResultsDetailView';
 

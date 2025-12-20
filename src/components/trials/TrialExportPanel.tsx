@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrialSet } from '../domain/trialTypes';
+import { TrialSet } from '../../domain/trialTypes';
 
 interface Props {
     trialSet: TrialSet | null;

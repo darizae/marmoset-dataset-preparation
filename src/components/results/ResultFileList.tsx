@@ -1,5 +1,5 @@
 import React from 'react';
-import { ParsedResultFile } from '../domain/resultsTypes';
+import { ParsedResultFile } from '../../domain/resultsTypes';
 
 interface Props {
     files: ParsedResultFile[];

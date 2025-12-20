@@ -1,5 +1,5 @@
 import React from 'react';
-import { DatasetWarning, FileError } from '../domain/types';
+import { DatasetWarning, FileError } from '../../domain/types';
 
 interface Props {
     warnings: DatasetWarning[];

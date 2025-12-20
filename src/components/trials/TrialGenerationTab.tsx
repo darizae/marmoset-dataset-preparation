@@ -1,8 +1,8 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { DatasetManifest } from '../domain/types';
-import { parsePreparedManifestFromFile } from '../domain/manifestIO';
-import { TrialConfig, TrialSet } from '../domain/trialTypes';
-import { generateTrials } from '../domain/trialGenerator';
+import { DatasetManifest } from '../../domain/types';
+import { parsePreparedManifestFromFile } from '../../domain/manifestIO';
+import { TrialConfig, TrialSet } from '../../domain/trialTypes';
+import { generateTrials } from '../../domain/trialGenerator';
 import TrialExportPanel from './TrialExportPanel';
 
 function inferPreparedLabel(file: File | null): string {

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import { ResultRow } from '../domain/resultsTypes';
-import { computeAnimalMetrics } from '../domain/resultsMetrics';
+import { ResultRow } from '../../domain/resultsTypes';
+import { computeAnimalMetrics } from '../../domain/resultsMetrics';
 import ConditionAccuracyBarChart from './charts/ConditionAccuracyBarChart';
 import LatencyDistributionChart from './charts/LatencyDistributionChart';
 

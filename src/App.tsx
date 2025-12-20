@@ -8,15 +8,15 @@ import {
     DatasetWarning,
     FileError
 } from './domain/types';
-import FolderSelector from './components/FolderSelector';
-import DataInfoWarning from './components/DataInfoWarning';
-import SettingsPanel from './components/SettingsPanel';
-import SummaryTable from './components/SummaryTable';
-import ErrorList from './components/ErrorList';
-import ProcessPanel from './components/ProcessPanel';
-import ExportPanel from './components/ExportPanel';
-import TrialGenerationTab from './components/TrialGenerationTab';
-import ResultsTab from "./components/ResultsTab";
+import FolderSelector from './components/common/FolderSelector';
+import DataInfoWarning from './components/prepare/DataInfoWarning';
+import SettingsPanel from './components/prepare/SettingsPanel';
+import SummaryTable from './components/prepare/SummaryTable';
+import ErrorList from './components/common/ErrorList';
+import ProcessPanel from './components/prepare/ProcessPanel';
+import ExportPanel from './components/prepare/ExportPanel';
+import ResultsTab from './components/results/ResultsTab';
+import BundleTab from './components/bundle/BundleTab';
 
 function inferFolderLabel(files: File[]): string {
     if (!files.length) return 'No folder selected';
@@ -26,7 +26,7 @@ function inferFolderLabel(files: File[]): string {
     return rel.split('/')[0];
 }
 
-type Tab = 'prepare' | 'trials' | 'results';
+type Tab = 'prepare' | 'bundle' | 'results';
 
 const App: React.FC = () => {
     const [activeTab, setActiveTab] = useState<Tab>('prepare');
@@ -166,10 +166,10 @@ const App: React.FC = () => {
                     </button>
                     <button
                         className="button"
-                        onClick={() => setActiveTab('trials')}
-                        disabled={activeTab === 'trials'}
+                        onClick={() => setActiveTab('bundle')}
+                        disabled={activeTab === 'bundle'}
                     >
-                        Trial generation
+                        Bundle
                     </button>
                     <button
                         className="button"
@@ -345,7 +345,7 @@ Odin,unfamiliar,,m,0`}</pre>
                     </>
                 )}
 
-                {activeTab === 'trials' && <TrialGenerationTab />}
+                {activeTab === 'bundle' && <BundleTab />}
                 {activeTab === 'results' && <ResultsTab />}
             </div>
         </div>

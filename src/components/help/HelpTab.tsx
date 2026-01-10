@@ -72,6 +72,20 @@ const HelpTab: React.FC = () => {
                     </div>
                 </div>
             </section>
+
+            <section className="section">
+                <div className="panel">
+                    <div className="panel-title">Same-sex partner</div>
+
+                    <div className="small-text">
+                        <ul style={{ marginTop: '0.25rem' }}>
+                            <li><strong>Strictly require <code>sex</code> on both subject and partner</strong> → prevents ambiguous datasets from generating trials.</li>
+                            <li><strong>Strictly require <code>subject.sex === partner.sex</code></strong> → enforces the new “same-sex best friend” rule at generation time (no silent invalid bundles).</li>
+                            <li><strong>Filter familiar/unfamiliar pools by that shared sex</strong> → guarantees the control animal and all stimuli are the same sex as the partner (and therefore the focal).</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
         </div>
     );
 };

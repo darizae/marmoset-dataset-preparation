@@ -189,13 +189,6 @@ export function generateTrials(manifest: DatasetManifest, subjectId: string, con
 
     const sessionId = buildSessionId(subject.id, config.seed);
 
-    const partnerMgr = new ExemplarPairManager(
-        partner.imageExemplars.map((e) => ({ index: e.index, relativePath: e.relativePath })),
-        partner.audioExemplars.map((e) => ({ index: e.index, relativePath: e.relativePath })),
-        rng,
-        config.avoidRepeatPairings
-    );
-
     const idToImageMgr = new Map<string, ExemplarPairManager>();
     const idToCallMgr = new Map<string, ExemplarPairManager>();
 
@@ -227,6 +220,8 @@ export function generateTrials(manifest: DatasetManifest, subjectId: string, con
         return mgr;
     }
 
+    const partnerImageMgr = getMgrForImagesOnly(partner);
+
     const trials: Trial[] = [];
 
     const familiarCallIds: string[] = [];
@@ -246,8 +241,14 @@ export function generateTrials(manifest: DatasetManifest, subjectId: string, con
 
     shuffleInPlace(scheduledCalls, rng);
 
-    const partnerOnLeftCount = config.balanceSides ? Math.floor(scheduledCalls.length / 2) : -1;
-    let assignedLeft = 0;
+    const sidePlan: Side[] = [];
+    if (config.balanceSides) {
+        const partnerOnLeftCount = Math.floor(scheduledCalls.length / 2);
+        for (let i = 0; i < scheduledCalls.length; i++) {
+            sidePlan.push(i < partnerOnLeftCount ? 'left' : 'right');
+        }
+        shuffleInPlace(sidePlan, rng);
+    }
 
     for (let idx = 0; idx < scheduledCalls.length; idx++) {
         const cell = scheduledCalls[idx];
@@ -269,29 +270,35 @@ export function generateTrials(manifest: DatasetManifest, subjectId: string, con
         const otherCategory: Category = familiar.some((e) => e.id === otherIdentity.id) ? 'familiar' : 'unfamiliar';
 
         const partnerSide: Side = config.balanceSides
-            ? assignedLeft < partnerOnLeftCount
-                ? 'left'
-                : 'right'
+            ? sidePlan[idx]
             : rng.next() < 0.5
                 ? 'left'
                 : 'right';
-        if (config.balanceSides && partnerSide === 'left') assignedLeft++;
+
+        const partnerImage: TrialStimulus & { identityId: string } = isPartnerCall
+            ? { identityId: partner.id, exemplarIndex: pair.imageIndex, path: pair.imagePath }
+            : (() => {
+                const p = partnerImageMgr.nextImageOnly();
+                return { identityId: partner.id, exemplarIndex: p.imageIndex, path: p.imagePath };
+            })();
+
+        const otherImage: TrialStimulus & { identityId: string } = isPartnerCall
+            ? (() => {
+                const otherImgMgr = getMgrForImagesOnly(otherIdentity);
+                const otherImg = otherImgMgr.nextImageOnly();
+                return { identityId: otherIdentity.id, exemplarIndex: otherImg.imageIndex, path: otherImg.imagePath };
+            })()
+            : { identityId: callIdentity.id, exemplarIndex: pair.imageIndex, path: pair.imagePath };
 
         let leftImage: TrialStimulus & { identityId: string };
         let rightImage: TrialStimulus & { identityId: string };
 
         if (partnerSide === 'left') {
-            const partnerImg = partnerMgr.nextImageOnly();
-            const otherImgMgr = getMgrForImagesOnly(otherIdentity);
-            const otherImg = otherImgMgr.nextImageOnly();
-            leftImage = { identityId: partner.id, exemplarIndex: partnerImg.imageIndex, path: partnerImg.imagePath };
-            rightImage = { identityId: otherIdentity.id, exemplarIndex: otherImg.imageIndex, path: otherImg.imagePath };
+            leftImage = partnerImage;
+            rightImage = otherImage;
         } else {
-            const partnerImg = partnerMgr.nextImageOnly();
-            const otherImgMgr = getMgrForImagesOnly(otherIdentity);
-            const otherImg = otherImgMgr.nextImageOnly();
-            rightImage = { identityId: partner.id, exemplarIndex: partnerImg.imageIndex, path: partnerImg.imagePath };
-            leftImage = { identityId: otherIdentity.id, exemplarIndex: otherImg.imageIndex, path: otherImg.imagePath };
+            leftImage = otherImage;
+            rightImage = partnerImage;
         }
 
         const correctSide: Side = isPartnerCall

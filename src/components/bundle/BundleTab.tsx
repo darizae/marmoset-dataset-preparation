@@ -521,6 +521,11 @@ const BundleTab: React.FC = () => {
                                     One global seed deterministically derives per-subject seeds. You can override any subject seed if needed.
                                 </div>
 
+                                <div className="small-text" style={{ marginBottom: '0.75rem' }}>
+                                    Each trial presents one call (audio) and a 2-choice display: partner face vs one other face. The correct response is to select the face matching the call identity (partner vs non-partner).
+                                    Total trials is per subject. Familiar fraction controls the fraction of calls coming from identities marked <code>familiar</code> (including the partner). Partner fraction within familiar splits familiar-call trials into partner vs familiar-non-partner calls.
+                                </div>
+
                                 <div className="inline-input-row" style={{ marginBottom: '0.75rem' }}>
                                     <label className="label">
                                         Total trials
@@ -575,6 +580,10 @@ const BundleTab: React.FC = () => {
                                             style={{ width: '10rem' }}
                                         />
                                     </label>
+                                </div>
+
+                                <div className="small-text" style={{ marginBottom: '0.75rem' }}>
+                                    Balance partner side makes the partner face appear left/right equally often (in a randomized order). Avoid repeat audio–image pairings tries to avoid reusing the same audio exemplar together with the same face exemplar for a given identity, reducing fixed pairing learning.
                                 </div>
 
                                 <div className="inline-input-row" style={{ marginBottom: '0.75rem' }}>

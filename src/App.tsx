@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import ResultsTab from './components/results/ResultsTab';
 import BundleTab from './components/bundle/BundleTab';
+import HelpTab from './components/help/HelpTab';
 
-type Tab = 'trialsBundle' | 'results';
+type Tab = 'trialsBundle' | 'results' | 'help';
 
 const App: React.FC = () => {
     const [activeTab, setActiveTab] = useState<Tab>('trialsBundle');
@@ -32,10 +33,18 @@ const App: React.FC = () => {
                     >
                         Results
                     </button>
+                    <button
+                        className="button"
+                        onClick={() => setActiveTab('help')}
+                        disabled={activeTab === 'help'}
+                    >
+                        Help
+                    </button>
                 </div>
 
                 {activeTab === 'trialsBundle' && <BundleTab />}
                 {activeTab === 'results' && <ResultsTab />}
+                {activeTab === 'help' && <HelpTab />}
             </div>
         </div>
     );

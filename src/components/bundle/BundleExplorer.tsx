@@ -22,12 +22,59 @@ interface Props {
     warnings: string[];
 }
 
+type TrialPreviewPick = {
+    trialId: string | null;
+    reason: string | null;
+};
+
+function matchesFilters(
+    t: Trial,
+    focusedIdentityId: string | null,
+    conditionFilter: ConditionLabel | 'all',
+    callIdentityFilter: string,
+    partnerSideFilter: Side | 'all',
+    correctSideFilter: Side | 'all'
+): boolean {
+    if (
+        focusedIdentityId &&
+        t.otherIdentityId !== focusedIdentityId &&
+        t.callIdentityId !== focusedIdentityId &&
+        t.partnerId !== focusedIdentityId
+    ) {
+        return false;
+    }
+    if (conditionFilter !== 'all') {
+        const cond = deriveCondition(t.isPartnerCall, t.callCategory);
+        if (cond !== conditionFilter) return false;
+    }
+    if (callIdentityFilter !== 'all' && t.callIdentityId !== callIdentityFilter) return false;
+    if (partnerSideFilter !== 'all' && t.partnerSide !== partnerSideFilter) return false;
+    if (correctSideFilter !== 'all' && t.correctSide !== correctSideFilter) return false;
+    return true;
+}
+
+function pickTrialForIdentity(trials: Trial[], identityId: string): TrialPreviewPick {
+    const byCall = trials.find((t) => t.callIdentityId === identityId);
+    if (byCall) return { trialId: byCall.trialId, reason: null };
+
+    const byImage = trials.find((t) => t.leftImage.identityId === identityId || t.rightImage.identityId === identityId);
+    if (byImage) {
+        return {
+            trialId: byImage.trialId,
+            reason: 'No call trial is available under the current filters; previewing a trial where this identity appears as an image.'
+        };
+    }
+
+    return { trialId: null, reason: 'No trials match this identity under the current filters.' };
+}
+
 const BundleExplorer: React.FC<Props> = ({ trialSets, resolveMediaFile, strictErrors, warnings }) => {
     const subjectIds = useMemo(() => Object.keys(trialSets).sort(), [trialSets]);
 
     const [selectedSubjectId, setSelectedSubjectId] = useState<string>(subjectIds[0] || '');
     const [selectedIdentityId, setSelectedIdentityId] = useState<string | null>(null);
     const [selectedTrialId, setSelectedTrialId] = useState<string | null>(null);
+    const [selectedIdentityPreviewReason, setSelectedIdentityPreviewReason] = useState<string | null>(null);
 
     const [conditionFilter, setConditionFilter] = useState<ConditionLabel | 'all'>('all');
     const [callIdentityFilter, setCallIdentityFilter] = useState<string>('all');
@@ -43,19 +90,9 @@ const BundleExplorer: React.FC<Props> = ({ trialSets, resolveMediaFile, strictEr
 
     const filteredTrials = useMemo(() => {
         if (!trialSet) return [];
-        return trialSet.trials.filter((t) => {
-            if (selectedIdentityId && t.otherIdentityId !== selectedIdentityId && t.callIdentityId !== selectedIdentityId && t.partnerId !== selectedIdentityId) {
-                return false;
-            }
-            if (conditionFilter !== 'all') {
-                const cond = deriveCondition(t.isPartnerCall, t.callCategory);
-                if (cond !== conditionFilter) return false;
-            }
-            if (callIdentityFilter !== 'all' && t.callIdentityId !== callIdentityFilter) return false;
-            if (partnerSideFilter !== 'all' && t.partnerSide !== partnerSideFilter) return false;
-            if (correctSideFilter !== 'all' && t.correctSide !== correctSideFilter) return false;
-            return true;
-        });
+        return trialSet.trials.filter((t) =>
+            matchesFilters(t, selectedIdentityId, conditionFilter, callIdentityFilter, partnerSideFilter, correctSideFilter)
+        );
     }, [trialSet, selectedIdentityId, conditionFilter, callIdentityFilter, partnerSideFilter, correctSideFilter]);
 
     const selectedTrial = useMemo(() => {
@@ -76,6 +113,7 @@ const BundleExplorer: React.FC<Props> = ({ trialSets, resolveMediaFile, strictEr
         setSelectedSubjectId(sid);
         setSelectedIdentityId(null);
         setSelectedTrialId(null);
+        setSelectedIdentityPreviewReason(null);
         setConditionFilter('all');
         setCallIdentityFilter('all');
         setPartnerSideFilter('all');
@@ -84,16 +122,31 @@ const BundleExplorer: React.FC<Props> = ({ trialSets, resolveMediaFile, strictEr
 
     const onSelectIdentity = useCallback((identityId: string) => {
         setSelectedIdentityId(identityId);
-        setSelectedTrialId(null);
-    }, []);
+
+        if (!trialSet) {
+            setSelectedTrialId(null);
+            setSelectedIdentityPreviewReason(null);
+            return;
+        }
+
+        const eligibleTrials = trialSet.trials
+            .filter((t) => matchesFilters(t, identityId, conditionFilter, callIdentityFilter, partnerSideFilter, correctSideFilter))
+            .sort((a, b) => a.trialNumber - b.trialNumber);
+
+        const pick = pickTrialForIdentity(eligibleTrials, identityId);
+        setSelectedTrialId(pick.trialId);
+        setSelectedIdentityPreviewReason(pick.reason);
+    }, [trialSet, conditionFilter, callIdentityFilter, partnerSideFilter, correctSideFilter]);
 
     const onSelectTrial = (t: Trial) => {
         setSelectedTrialId(t.trialId);
+        setSelectedIdentityPreviewReason(null);
     };
 
     const clearFocus = () => {
         setSelectedIdentityId(null);
         setSelectedTrialId(null);
+        setSelectedIdentityPreviewReason(null);
     };
 
     if (!trialSet) {
@@ -284,7 +337,12 @@ const BundleExplorer: React.FC<Props> = ({ trialSets, resolveMediaFile, strictEr
                     )}
                 </div>
 
-                <TrialDetailPanel trial={selectedTrial} resolveMediaFile={resolveMediaFile} />
+                <TrialDetailPanel
+                    trial={selectedTrial}
+                    resolveMediaFile={resolveMediaFile}
+                    focusedIdentityId={selectedIdentityId}
+                    identityPreviewReason={selectedIdentityPreviewReason}
+                />
             </div>
         </div>
     );

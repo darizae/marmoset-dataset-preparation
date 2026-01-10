@@ -43,6 +43,9 @@ function computePoolSummary(manifest: DatasetManifest, subjectId: string): { par
     const subject = manifest.identities.find((e) => e.id === subjectId);
     if (!subject) return { partnerId: '', familiarWithMedia: 0, unfamiliarWithMedia: 0, errors: [`Subject not found: ${subjectId}`] };
 
+    const subjectSex = toLower(subject.properties?.sex);
+    if (!subjectSex) errors.push(`Subject "${subjectId}" has no sex property.`);
+
     const partnerId = String(subject.properties?.partner_ID ?? subject.properties?.partnerId ?? subject.properties?.partner ?? '').trim();
     if (!partnerId) errors.push(`Subject "${subjectId}" is missing partner_ID.`);
     const partner = manifest.identities.find((e) => e.id === partnerId);
@@ -50,9 +53,14 @@ function computePoolSummary(manifest: DatasetManifest, subjectId: string): { par
 
     const partnerSex = partner ? toLower(partner.properties?.sex) : '';
     if (!partnerSex) errors.push(`Partner "${partnerId}" has no sex property.`);
+    if (subjectSex && partnerSex && subjectSex !== partnerSex) {
+        errors.push(`Subject "${subjectId}" sex ("${subjectSex}") does not match partner "${partnerId}" sex ("${partnerSex}").`);
+    }
 
-    const familiar = manifest.identities.filter((e) => e.id !== subjectId && toLower(e.properties?.sex) === partnerSex && toLower(e.properties?.familiarity) === 'familiar');
-    const unfamiliar = manifest.identities.filter((e) => e.id !== subjectId && toLower(e.properties?.sex) === partnerSex && toLower(e.properties?.familiarity) === 'unfamiliar');
+    const sexToUse = subjectSex || partnerSex;
+
+    const familiar = manifest.identities.filter((e) => e.id !== subjectId && toLower(e.properties?.sex) === sexToUse && toLower(e.properties?.familiarity) === 'familiar');
+    const unfamiliar = manifest.identities.filter((e) => e.id !== subjectId && toLower(e.properties?.sex) === sexToUse && toLower(e.properties?.familiarity) === 'unfamiliar');
 
     const familiarWithMedia = familiar.filter((e) => e.imageExemplars.length > 0 && e.audioExemplars.length > 0).length;
     const unfamiliarWithMedia = unfamiliar.filter((e) => e.imageExemplars.length > 0 && e.audioExemplars.length > 0).length;

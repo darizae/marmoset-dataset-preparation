@@ -92,18 +92,28 @@ function buildPools(manifest: DatasetManifest, subjectId: string): {
 } {
     const subj = identityById(manifest, subjectId);
     if (!subj) throw new Error(`Subject ID not found: ${subjectId}`);
+
+    const subjectSex = lowerStr(subj.properties?.sex);
+    if (!subjectSex) throw new Error(`Subject "${subjectId}" has no sex property.`);
+
     const partnerId = valStr(subj.properties?.partner_ID || subj.properties?.partnerId || subj.properties?.partner).trim();
     if (!partnerId) throw new Error('Selected subject has no partner_ID in the prepared manifest.');
+
     const partner = identityById(manifest, partnerId);
     if (!partner) throw new Error(`Partner "${partnerId}" not found in prepared manifest.`);
+
     const partnerSex = lowerStr(partner.properties?.sex);
-    if (!partnerSex) throw new Error('Partner has no sex property.');
+    if (!partnerSex) throw new Error(`Partner "${partnerId}" has no sex property.`);
+    if (partnerSex !== subjectSex) {
+        throw new Error(`Subject "${subjectId}" sex ("${subjectSex}") does not match partner "${partnerId}" sex ("${partnerSex}").`);
+    }
+
     const fam: IdentityDatasetEntry[] = [];
     const unfam: IdentityDatasetEntry[] = [];
     for (const e of manifest.identities) {
         if (e.id === subjectId) continue;
         const sex = lowerStr(e.properties?.sex);
-        if (sex !== partnerSex) continue;
+        if (sex !== subjectSex) continue;
         const famStr = lowerStr(e.properties?.familiarity);
         if (famStr === 'familiar') fam.push(e);
         else if (famStr === 'unfamiliar') unfam.push(e);

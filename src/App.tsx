@@ -1,5 +1,6 @@
 import React, { Suspense, useMemo, useState } from 'react';
 import AnalyticsRoundedIcon from '@mui/icons-material/AnalyticsRounded';
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded';
 import DatasetLinkedRoundedIcon from '@mui/icons-material/DatasetLinkedRounded';
 import TravelExploreRoundedIcon from '@mui/icons-material/TravelExploreRounded';
@@ -7,6 +8,7 @@ import {
     AppBar,
     Box,
     Button,
+    Chip,
     Container,
     LinearProgress,
     Paper,
@@ -22,11 +24,13 @@ import { HelpTopicId } from './components/help/helpTopics';
 import { usePersistentState, useSessionState } from './persistence/hooks';
 import { allStorageKeys, storageKeys } from './persistence/keys';
 import { clearStoredValues } from './persistence/storage';
+import { APP_VERSION } from './appMeta';
 
 const ResultsTab = React.lazy(() => import('./components/results/ResultsTab'));
 const BundleExploreTab = React.lazy(() => import('./components/bundle/BundleExploreTab'));
+const ChangelogTab = React.lazy(() => import('./components/changelog/ChangelogTab'));
 
-type TabId = 'build' | 'explore' | 'results';
+type TabId = 'build' | 'explore' | 'results' | 'changelog';
 
 const tabMeta: Record<TabId, { title: string; description: string }> = {
     build: {
@@ -40,6 +44,10 @@ const tabMeta: Record<TabId, { title: string; description: string }> = {
     results: {
         title: 'Analyze results',
         description: 'Upload CSV or JSONL outputs, review parse issues, and inspect summary metrics by subject.'
+    },
+    changelog: {
+        title: 'Changelog',
+        description: 'Short release notes for the current version of the app.'
     }
 };
 
@@ -66,10 +74,13 @@ const App: React.FC = () => {
         <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', pb: 6 }}>
             <AppBar position="static" color="transparent" elevation={0} sx={{ borderBottom: 1, borderColor: 'divider' }}>
                 <Toolbar sx={{ py: 2 }}>
-                    <Stack spacing={0.75}>
-                        <Typography variant="h4">Marmoset Dataset Preparation</Typography>
+                    <Stack spacing={0.75} sx={{ width: '100%' }}>
+                        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between">
+                            <Typography variant="h4">Marmoset Dataset Preparation</Typography>
+                            <Chip label={`Version ${APP_VERSION}`} color="primary" variant="outlined" />
+                        </Stack>
                         <Typography variant="body2" color="text.secondary">
-                            Modernized build, validation, and analysis workflow for trial bundles and experiment outputs.
+                            Modernized build, validation, analysis, and preview workflow for trial bundles and experiment outputs.
                         </Typography>
                     </Stack>
                 </Toolbar>
@@ -83,6 +94,7 @@ const App: React.FC = () => {
                                 <Tab icon={<DatasetLinkedRoundedIcon />} iconPosition="start" label="Build bundle" value="build" />
                                 <Tab icon={<TravelExploreRoundedIcon />} iconPosition="start" label="Explore bundle" value="explore" />
                                 <Tab icon={<AnalyticsRoundedIcon />} iconPosition="start" label="Analyze results" value="results" />
+                                <Tab icon={<HistoryRoundedIcon />} iconPosition="start" label="Changelog" value="changelog" />
                             </Tabs>
                             <Button
                                 variant="text"
@@ -108,7 +120,9 @@ const App: React.FC = () => {
                         <BundleTab onOpenHelp={openHelp} />
                     ) : (
                         <Suspense fallback={<LinearProgress />}>
-                            {activeTab === 'explore' ? <BundleExploreTab onOpenHelp={openHelp} /> : <ResultsTab onOpenHelp={openHelp} />}
+                            {activeTab === 'explore' ? <BundleExploreTab onOpenHelp={openHelp} /> : null}
+                            {activeTab === 'results' ? <ResultsTab onOpenHelp={openHelp} /> : null}
+                            {activeTab === 'changelog' ? <ChangelogTab /> : null}
                         </Suspense>
                     )}
                 </Stack>

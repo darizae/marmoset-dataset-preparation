@@ -1,0 +1,3 @@
+subject_id,trial_id,trial_number,is_partner_call,call_category,outcome,chosen_side,correct_side,latency_sec,session_id,partner_id
+A,t1,1,true,familiar,correct,left,left,1.2,s1,B
+A,t2,2,false,unfamiliar,incorrect,right,left,1.8,s1,B

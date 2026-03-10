@@ -1,0 +1,4 @@
+ID,partner_ID,sex,familiarity,focal
+A,B,m,familiar,1
+B,A,m,familiar,0
+C,,m,unfamiliar,0

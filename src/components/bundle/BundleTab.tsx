@@ -1,13 +1,39 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import {
+    Accordion,
+    AccordionDetails,
+    AccordionSummary,
+    Alert,
+    Button,
+    Checkbox,
+    Chip,
+    FormControlLabel,
+    Grid,
+    Stack,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    TextField,
+    Typography
+} from '@mui/material';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import FolderSelector from '../common/FolderSelector';
 import ErrorList from '../common/ErrorList';
+import PageSection from '../common/PageSection';
+import ValidationSummary from '../common/ValidationSummary';
+import ContextHelpButton from '../help/ContextHelpButton';
+import { HelpTopicId } from '../help/helpTopics';
 import { parseDataInfoCsv } from '../../domain/csvParser';
 import { buildDatasetManifest } from '../../domain/datasetBuilder';
-import { CsvIdentityRow, DatasetManifest, DatasetWarning, FileError, IdentityDatasetEntry } from '../../domain/types';
+import { CsvIdentityRow, DatasetManifest, DatasetWarning, FileError } from '../../domain/types';
 import { TrialConfig, TrialSet } from '../../domain/trialTypes';
 import BundleStepHeader from './BundleStepHeader';
 import BundleExplorer from './BundleExplorer';
-import { parseBundleFromDirectorySelection } from '../../domain/bundle/bundleParser';
 import {
     buildBundleInMemory,
     buildSeedPolicyGlobal,
@@ -17,96 +43,68 @@ import {
     generateMultiSubjectTrials,
     listDefaultSubjectIds
 } from '../../domain/bundle/bundleBuilder';
+import { BuildStep, computePoolSummary, inferFolderLabel, isFocal } from './bundleWorkflow';
+import { usePersistentState, useSessionState } from '../../persistence/hooks';
+import { storageKeys } from '../../persistence/keys';
+import HelpHint from '../common/HelpHint';
 
-type BuildStep = 1 | 2 | 3 | 4 | 5;
-
-function inferFolderLabel(files: File[]): string {
-    if (!files.length) return 'No folder selected';
-    const anyFile = files[0] as any;
-    const rel = typeof anyFile.webkitRelativePath === 'string' ? anyFile.webkitRelativePath : files[0].name;
-    if (!rel || !rel.includes('/')) return rel || 'Selected folder';
-    return rel.split('/')[0];
+interface Props {
+    onOpenHelp: (topicId: HelpTopicId) => void;
 }
 
-function isFocal(entry: IdentityDatasetEntry): boolean {
-    const v = entry.properties?.focal;
-    const s = String(v ?? '').trim().toLowerCase();
-    return s === '1' || s === 'true';
+function getRelativePath(file: File): string {
+    const fileWithRelativePath = file as File & { webkitRelativePath?: string };
+    if (typeof fileWithRelativePath.webkitRelativePath === 'string' && fileWithRelativePath.webkitRelativePath.length > 0) {
+        return fileWithRelativePath.webkitRelativePath;
+    }
+    return file.name;
 }
 
-function toLower(v: unknown): string {
-    return String(v ?? '').trim().toLowerCase();
-}
+function buildSourceMediaMap(manifest: DatasetManifest, files: File[]): Map<string, File> {
+    const filesByRelativePath = new Map(files.map((file) => [getRelativePath(file), file]));
+    const media = new Map<string, File>();
 
-function computePoolSummary(manifest: DatasetManifest, subjectId: string): { partnerId: string; familiarWithMedia: number; unfamiliarWithMedia: number; errors: string[] } {
-    const errors: string[] = [];
-    const subject = manifest.identities.find((e) => e.id === subjectId);
-    if (!subject) return { partnerId: '', familiarWithMedia: 0, unfamiliarWithMedia: 0, errors: [`Subject not found: ${subjectId}`] };
-
-    const subjectSex = toLower(subject.properties?.sex);
-    if (!subjectSex) errors.push(`Subject "${subjectId}" has no sex property.`);
-
-    const partnerId = String(subject.properties?.partner_ID ?? subject.properties?.partnerId ?? subject.properties?.partner ?? '').trim();
-    if (!partnerId) errors.push(`Subject "${subjectId}" is missing partner_ID.`);
-    const partner = manifest.identities.find((e) => e.id === partnerId);
-    if (!partner) errors.push(`Partner "${partnerId}" not found for subject "${subjectId}".`);
-
-    const partnerSex = partner ? toLower(partner.properties?.sex) : '';
-    if (!partnerSex) errors.push(`Partner "${partnerId}" has no sex property.`);
-    if (subjectSex && partnerSex && subjectSex !== partnerSex) {
-        errors.push(`Subject "${subjectId}" sex ("${subjectSex}") does not match partner "${partnerId}" sex ("${partnerSex}").`);
+    for (const identity of manifest.identities) {
+        for (const exemplar of [...identity.imageExemplars, ...identity.audioExemplars]) {
+            const file = filesByRelativePath.get(exemplar.relativePath);
+            if (file) {
+                media.set(exemplar.relativePath, file);
+            }
+        }
     }
 
-    const sexToUse = subjectSex || partnerSex;
-
-    const familiar = manifest.identities.filter((e) => e.id !== subjectId && toLower(e.properties?.sex) === sexToUse && toLower(e.properties?.familiarity) === 'familiar');
-    const unfamiliar = manifest.identities.filter((e) => e.id !== subjectId && toLower(e.properties?.sex) === sexToUse && toLower(e.properties?.familiarity) === 'unfamiliar');
-
-    const familiarWithMedia = familiar.filter((e) => e.imageExemplars.length > 0 && e.audioExemplars.length > 0).length;
-    const unfamiliarWithMedia = unfamiliar.filter((e) => e.imageExemplars.length > 0 && e.audioExemplars.length > 0).length;
-
-    return { partnerId, familiarWithMedia, unfamiliarWithMedia, errors };
+    return media;
 }
 
-const BundleTab: React.FC = () => {
-    const [mode, setMode] = useState<'build' | 'visualize'>('build');
-
-    const [step, setStep] = useState<BuildStep>(1);
+const BundleTab: React.FC<Props> = ({ onOpenHelp }) => {
+    const [step, setStep] = useSessionState<BuildStep>(storageKeys.buildSession, 1);
+    const [advancedSettingsExpanded, setAdvancedSettingsExpanded] = useSessionState<boolean>(`${storageKeys.buildSession}.advancedExpanded`, false);
 
     const [datasetFiles, setDatasetFiles] = useState<File[]>([]);
     const [datasetFolderLabel, setDatasetFolderLabel] = useState<string>('No folder selected');
-
     const [csvError, setCsvError] = useState<string | null>(null);
     const [csvRows, setCsvRows] = useState<CsvIdentityRow[] | null>(null);
-
     const [manifest, setManifest] = useState<DatasetManifest | null>(null);
     const [datasetWarnings, setDatasetWarnings] = useState<DatasetWarning[]>([]);
     const [datasetFileErrors, setDatasetFileErrors] = useState<FileError[]>([]);
 
-    const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>([]);
-    const [datasetId, setDatasetId] = useState<string>('');
+    const [selectedSubjectIds, setSelectedSubjectIds] = useSessionState<string[]>(`${storageKeys.buildSession}.selectedSubjects`, []);
+    const [datasetId, setDatasetId] = useSessionState<string>(`${storageKeys.buildSession}.datasetId`, '');
 
-    const [totalTrials, setTotalTrials] = useState<number>(40);
-    const [familiarFraction, setFamiliarFraction] = useState<number>(0.5);
-    const [partnerFractionWithinFamiliar, setPartnerFractionWithinFamiliar] = useState<number>(0.5);
-    const [balanceSides, setBalanceSides] = useState<boolean>(true);
-    const [avoidRepeatPairings, setAvoidRepeatPairings] = useState<boolean>(true);
-
-    const [globalSeed, setGlobalSeed] = useState<string>('42');
-    const [perSubjectOverrides, setPerSubjectOverrides] = useState<Record<string, string>>({});
+    const [totalTrials, setTotalTrials] = usePersistentState<number>(`${storageKeys.buildPreferences}.totalTrials`, 40);
+    const [familiarFraction, setFamiliarFraction] = usePersistentState<number>(`${storageKeys.buildPreferences}.familiarFraction`, 0.5);
+    const [partnerFractionWithinFamiliar, setPartnerFractionWithinFamiliar] = usePersistentState<number>(`${storageKeys.buildPreferences}.partnerFractionWithinFamiliar`, 0.5);
+    const [balanceSides, setBalanceSides] = usePersistentState<boolean>(`${storageKeys.buildPreferences}.balanceSides`, true);
+    const [avoidRepeatPairings, setAvoidRepeatPairings] = usePersistentState<boolean>(`${storageKeys.buildPreferences}.avoidRepeatPairings`, true);
+    const [globalSeed, setGlobalSeed] = usePersistentState<string>(`${storageKeys.buildPreferences}.globalSeed`, '42');
+    const [perSubjectOverrides, setPerSubjectOverrides] = useSessionState<Record<string, string>>(`${storageKeys.buildSession}.perSubjectOverrides`, {});
 
     const [trialSets, setTrialSets] = useState<Record<string, TrialSet>>({});
     const [generationErrors, setGenerationErrors] = useState<string[]>([]);
     const [generationWarnings, setGenerationWarnings] = useState<string[]>([]);
+    const [helpHintDismissed, setHelpHintDismissed] = usePersistentState<boolean>(`${storageKeys.appPreferences}.buildHelpHintDismissed`, false);
 
-    const [bundleFiles, setBundleFiles] = useState<File[]>([]);
-    const [bundleFolderLabel, setBundleFolderLabel] = useState<string>('No folder selected');
-    const [bundleStrictErrors, setBundleStrictErrors] = useState<string[]>([]);
-    const [bundleWarnings, setBundleWarnings] = useState<string[]>([]);
-    const [bundleTrialSets, setBundleTrialSets] = useState<Record<string, TrialSet>>({});
-    const [bundleMediaByInternalPath, setBundleMediaByInternalPath] = useState<Map<string, File>>(new Map());
-
-    const resetBuildState = () => {
+    const resetBuilder = () => {
         setDatasetFiles([]);
         setDatasetFolderLabel('No folder selected');
         setCsvError(null);
@@ -119,47 +117,12 @@ const BundleTab: React.FC = () => {
         setTrialSets({});
         setGenerationErrors([]);
         setGenerationWarnings([]);
+        setAdvancedSettingsExpanded(false);
         setStep(1);
     };
 
-    const resetVisualizeState = () => {
-        setBundleFiles([]);
-        setBundleFolderLabel('No folder selected');
-        setBundleStrictErrors([]);
-        setBundleWarnings([]);
-        setBundleTrialSets({});
-        setBundleMediaByInternalPath(new Map());
-    };
-
-    const onSwitchMode = (nextMode: 'build' | 'visualize') => {
-        setMode(nextMode);
-        resetBuildState();
-        resetVisualizeState();
-    };
-
-    const canGoToStep = useCallback((target: BuildStep) => {
-        if (mode !== 'build') return false;
-        if (target === 1) return true;
-        if (target === 2) return !!manifest && datasetFileErrors.length === 0 && !csvError;
-        if (target === 3) return selectedSubjectIds.length > 0 && !!manifest;
-        if (target === 4) return Object.keys(trialSets).length > 0 && generationErrors.length === 0;
-        if (target === 5) return Object.keys(trialSets).length > 0 && generationErrors.length === 0;
-        return false;
-    }, [mode, manifest, datasetFileErrors.length, csvError, selectedSubjectIds.length, trialSets, generationErrors.length]);
-
-    const resolveBuildMediaFile = useCallback((internalPath: string) => {
-        const fileName = internalPath.split('/').slice(-1)[0];
-        const matches = datasetFiles.filter((f) => f.name === fileName);
-        if (matches.length === 1) return matches[0];
-        return null;
-    }, [datasetFiles]);
-
-    const resolveBundleMediaFile = useCallback((internalPath: string) => {
-        return bundleMediaByInternalPath.get(internalPath) || null;
-    }, [bundleMediaByInternalPath]);
-
-    const onDatasetFolderChange = useCallback(async (filesList: FileList | null) => {
-        resetBuildState();
+    const onDatasetFolderChange = async (filesList: FileList | null) => {
+        resetBuilder();
         if (!filesList || filesList.length === 0) return;
 
         const files = Array.from(filesList);
@@ -168,11 +131,10 @@ const BundleTab: React.FC = () => {
         setDatasetFolderLabel(label);
         setDatasetId(chooseDefaultDatasetId(label));
 
-        const dataInfoFile = files.find((f) => {
-            const anyFile = f as any;
-            const rel = typeof anyFile.webkitRelativePath === 'string' ? (anyFile.webkitRelativePath as string) : f.name;
-            const isRoot = rel.split('/').length === 2;
-            return isRoot && f.name === 'data_info.csv';
+        const dataInfoFile = files.find((file) => {
+            const relativePath = getRelativePath(file);
+            const isRoot = relativePath.split('/').length === 2;
+            return isRoot && file.name === 'data_info.csv';
         });
 
         if (!dataInfoFile) {
@@ -183,7 +145,6 @@ const BundleTab: React.FC = () => {
         try {
             const parsed = await parseDataInfoCsv(dataInfoFile);
             setCsvRows(parsed.rows);
-
             const result = buildDatasetManifest({
                 csvRows: parsed.rows,
                 dataDirLabel: label,
@@ -196,79 +157,93 @@ const BundleTab: React.FC = () => {
             setDatasetWarnings(result.warnings);
             setDatasetFileErrors(result.fileErrors);
 
-            const defaults = listDefaultSubjectIds(result.manifest).filter((id) => {
-                const entry = result.manifest.identities.find((e) => e.id === id);
+            const defaults = listDefaultSubjectIds(result.manifest).filter((subjectId) => {
+                const entry = result.manifest.identities.find((identity) => identity.id === subjectId);
                 return entry ? isFocal(entry) : false;
             });
             const fallback = listDefaultSubjectIds(result.manifest);
-            const initial = defaults.length ? defaults : fallback;
-            setSelectedSubjectIds(initial);
-
+            setSelectedSubjectIds(defaults.length > 0 ? defaults : fallback);
             setStep(2);
-        } catch (err: any) {
-            setCsvError(err?.message || String(err));
+        } catch (error: any) {
+            setCsvError(error?.message || String(error));
         }
-    }, []);
+    };
 
     const subjectOptions = useMemo(() => {
         if (!manifest) return [];
-        return manifest.identities.map((e) => e.id).sort();
+        return manifest.identities.map((entry) => entry.id).sort();
     }, [manifest]);
 
     const selectedSubjectSummaries = useMemo(() => {
         if (!manifest) return [];
-        return selectedSubjectIds.map((sid) => {
-            const summary = computePoolSummary(manifest, sid);
-            return { subjectId: sid, ...summary };
-        });
+        return selectedSubjectIds.map((subjectId) => ({ subjectId, ...computePoolSummary(manifest, subjectId) }));
     }, [manifest, selectedSubjectIds]);
 
     const subjectSelectionStrictErrors = useMemo(() => {
-        const errors: string[] = [];
-        if (!manifest) return errors;
-        for (const s of selectedSubjectSummaries) {
-            for (const e of s.errors) errors.push(e);
-        }
-        return errors;
-    }, [manifest, selectedSubjectSummaries]);
+        return selectedSubjectSummaries.flatMap((summary) => summary.errors);
+    }, [selectedSubjectSummaries]);
 
-    const baseConfig = useMemo((): Omit<TrialConfig, 'seed'> => {
-        return {
-            totalTrials,
-            familiarFraction,
-            partnerFractionWithinFamiliar,
-            balanceSides,
-            avoidRepeatPairings
-        };
-    }, [totalTrials, familiarFraction, partnerFractionWithinFamiliar, balanceSides, avoidRepeatPairings]);
+    const baseConfig = useMemo((): Omit<TrialConfig, 'seed'> => ({
+        totalTrials,
+        familiarFraction,
+        partnerFractionWithinFamiliar,
+        balanceSides,
+        avoidRepeatPairings
+    }), [avoidRepeatPairings, balanceSides, familiarFraction, partnerFractionWithinFamiliar, totalTrials]);
 
-    const seedPolicy = useMemo(() => {
-        return buildSeedPolicyGlobal(globalSeed, perSubjectOverrides);
-    }, [globalSeed, perSubjectOverrides]);
+    const seedPolicy = useMemo(() => buildSeedPolicyGlobal(globalSeed, perSubjectOverrides), [globalSeed, perSubjectOverrides]);
 
     const derivedSeeds = useMemo(() => {
         const out: Record<string, string> = {};
-        for (const sid of selectedSubjectIds) {
+        for (const subjectId of selectedSubjectIds) {
             try {
-                out[sid] = deriveSubjectSeed(seedPolicy, sid);
-            } catch (err: any) {
-                out[sid] = `ERROR: ${err?.message || String(err)}`;
+                out[subjectId] = deriveSubjectSeed(seedPolicy, subjectId);
+            } catch (error: any) {
+                out[subjectId] = `ERROR: ${error?.message || String(error)}`;
             }
         }
         return out;
-    }, [selectedSubjectIds, seedPolicy]);
+    }, [seedPolicy, selectedSubjectIds]);
+
+    const previewMediaByPath = useMemo(() => {
+        return manifest ? buildSourceMediaMap(manifest, datasetFiles) : new Map<string, File>();
+    }, [datasetFiles, manifest]);
+
+    useEffect(() => {
+        if (!manifest && step !== 1) {
+            setStep(1);
+        }
+    }, [manifest, setStep, step]);
+
+    const canGoToStep = useCallback((target: BuildStep) => {
+        if (target === 1) return true;
+        if (target === 2) return Boolean(manifest) && datasetFileErrors.length === 0 && !csvError;
+        if (target === 3) return Boolean(manifest) && selectedSubjectIds.length > 0;
+        if (target === 4) return Object.keys(trialSets).length > 0 && generationErrors.length === 0;
+        if (target === 5) return Object.keys(trialSets).length > 0 && generationErrors.length === 0;
+        return false;
+    }, [csvError, datasetFileErrors.length, generationErrors.length, manifest, selectedSubjectIds.length, trialSets]);
 
     const onToggleSubject = (subjectId: string) => {
         setTrialSets({});
         setGenerationErrors([]);
         setGenerationWarnings([]);
-
         setSelectedSubjectIds((prev) => {
-            const has = prev.includes(subjectId);
-            const next = has ? prev.filter((x) => x !== subjectId) : [...prev, subjectId];
-            next.sort((a, b) => a.localeCompare(b));
-            return next;
+            const next = prev.includes(subjectId) ? prev.filter((id) => id !== subjectId) : [...prev, subjectId];
+            return next.sort((left, right) => left.localeCompare(right));
         });
+    };
+
+    const focalSubjectIds = useMemo(() => {
+        if (!manifest) return [];
+        return manifest.identities.filter(isFocal).map((entry) => entry.id).sort();
+    }, [manifest]);
+
+    const selectSubjects = (ids: string[]) => {
+        setTrialSets({});
+        setGenerationErrors([]);
+        setGenerationWarnings([]);
+        setSelectedSubjectIds(ids);
     };
 
     const onGenerateTrials = () => {
@@ -292,25 +267,19 @@ const BundleTab: React.FC = () => {
 
         try {
             const generated = generateMultiSubjectTrials(manifest, selectedSubjectIds, baseConfig, seedPolicy);
+            const warnings = Object.keys(generated).flatMap((subjectId) =>
+                (generated[subjectId].meta.warnings || []).map((warning) => `${subjectId}: ${warning.message}`)
+            );
             setTrialSets(generated);
-
-            const nonFatal: string[] = [];
-            for (const sid of Object.keys(generated)) {
-                const warns = generated[sid].meta.warnings || [];
-                for (const w of warns) nonFatal.push(`${sid}: ${w.message}`);
-            }
-            setGenerationWarnings(nonFatal);
-
+            setGenerationWarnings(warnings);
             setStep(4);
-        } catch (err: any) {
-            setGenerationErrors([err?.message || String(err)]);
+        } catch (error: any) {
+            setGenerationErrors([error?.message || String(error)]);
         }
     };
 
     const onDownloadZip = async () => {
-        if (!manifest) return;
-        if (!Object.keys(trialSets).length) return;
-
+        if (!manifest || !Object.keys(trialSets).length) return;
         setGenerationErrors([]);
         try {
             const bundle = buildBundleInMemory(
@@ -323,419 +292,332 @@ const BundleTab: React.FC = () => {
                 datasetFiles
             );
             await downloadBundleZip(bundle, datasetId);
-        } catch (err: any) {
-            setGenerationErrors([err?.message || String(err)]);
+        } catch (error: any) {
+            setGenerationErrors([error?.message || String(error)]);
         }
     };
 
-    const onBundleFolderChange = useCallback(async (filesList: FileList | null) => {
-        resetVisualizeState();
-        if (!filesList || filesList.length === 0) return;
-
-        const files = Array.from(filesList);
-        setBundleFiles(files);
-        setBundleFolderLabel(inferFolderLabel(files));
-
-        try {
-            const parsed = await parseBundleFromDirectorySelection(files);
-            setBundleTrialSets(parsed.trialSets);
-            setBundleMediaByInternalPath(parsed.mediaByInternalPath);
-            setBundleStrictErrors([]);
-            setBundleWarnings([]);
-        } catch (err: any) {
-            setBundleStrictErrors([err?.message || String(err)]);
-        }
-    }, []);
-
     return (
-        <div>
-            <section className="section" style={{ marginTop: 0, paddingTop: 0, borderTop: 'none' }}>
-                <div className="section-title">Trials Bundle builder + visual explorer</div>
-                <div className="section-subtitle">
-                    Build mode: select a dataset folder, generate trials for one or many subjects, inspect trials + media, then download one bundle zip.
-                    Visualize mode: load an existing bundle directory and explore/verify it without regeneration.
-                </div>
+        <Stack spacing={3}>
+            <HelpHint visible={!helpHintDismissed} onDismiss={() => setHelpHintDismissed(true)} />
 
-                <div className="inline-input-row">
-                    <button className="button" disabled={mode === 'build'} onClick={() => onSwitchMode('build')}>
-                        Build a trials bundle
-                    </button>
-                    <button className="button" disabled={mode === 'visualize'} onClick={() => onSwitchMode('visualize')}>
-                        Visualize an existing bundle
-                    </button>
-                </div>
-            </section>
+            <PageSection
+                title="Build workflow"
+                description="Move left to right: validate the dataset, confirm subjects, tune settings, preview the generated trials, then export the bundle."
+                action={<ContextHelpButton topicId="dataset-requirements" onOpen={onOpenHelp} label="Help" />}
+            >
+                <BundleStepHeader step={step} setStep={setStep} canGoToStep={canGoToStep} />
+            </PageSection>
 
-            <section className="section">
-                <BundleStepHeader
-                    mode={mode}
-                    step={step}
-                    setStep={setStep}
-                    canGoToStep={canGoToStep}
-                />
+            {step === 1 ? (
+                <PageSection
+                    title="Dataset selection and validation"
+                    description="Start by selecting the dataset root. Only the minimum guidance stays inline; use help for the full requirements."
+                    action={<ContextHelpButton topicId="dataset-requirements" onOpen={onOpenHelp} label="Help" />}
+                >
+                    <FolderSelector
+                        onFolderChange={onDatasetFolderChange}
+                        folderLabel={datasetFolderLabel}
+                        helperText="The root must contain data_info.csv. Media can remain nested."
+                    />
+                    <ValidationSummary errors={csvError ? [csvError] : []} />
+                    {csvRows ? (
+                        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                            <Chip label={`CSV rows: ${csvRows.length}`} variant="outlined" />
+                            {manifest ? <Chip label={`Identities: ${manifest.identities.length}`} variant="outlined" /> : null}
+                        </Stack>
+                    ) : null}
+                </PageSection>
+            ) : null}
 
-                {mode === 'visualize' && (
-                    <>
-                        <div className="panel" style={{ marginBottom: '0.75rem' }}>
-                            <div className="panel-title">Select bundle root directory</div>
-                            <div className="panel-subtitle">
-                                Must contain: <code>dataset_meta.json</code>, <code>manifest.json</code>, <code>trial_sets/&lt;subject&gt;/trials.json</code>, and <code>media/images</code> + <code>media/audio</code>.
-                            </div>
-                            <FolderSelector onFolderChange={onBundleFolderChange} folderLabel={bundleFolderLabel} />
-                            {bundleStrictErrors.length > 0 && (
-                                <div style={{ marginTop: '0.75rem' }}>
-                                    <div className="label">Strict errors:</div>
-                                    <ul className="error-list">
-                                        {bundleStrictErrors.map((e, idx) => (
-                                            <li key={idx} className="error-item">{e}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                        </div>
-
-                        {Object.keys(bundleTrialSets).length > 0 && (
-                            <BundleExplorer
-                                trialSets={bundleTrialSets}
-                                resolveMediaFile={resolveBundleMediaFile}
-                                strictErrors={bundleStrictErrors}
-                                warnings={bundleWarnings}
-                            />
-                        )}
-                    </>
-                )}
-
-                {mode === 'build' && (
-                    <>
-                        {step === 1 && (
-                            <div className="panel">
-                                <div className="panel-title">Step 1 — Select dataset folder</div>
-                                <div className="panel-subtitle">
-                                    The dataset folder is the source of truth: it must contain <code>data_info.csv</code> at the root and all JPG/WAV media.
-                                </div>
-                                <FolderSelector onFolderChange={onDatasetFolderChange} folderLabel={datasetFolderLabel} />
-                                {csvError && <div className="error-item" style={{ marginTop: '0.5rem' }}>{csvError}</div>}
-                                <div className="small-text" style={{ marginTop: '0.5rem' }}>
-                                    Trials are generated in-memory inside this workflow; the output is a single deployable bundle zip.
-                                </div>
-                            </div>
-                        )}
-
-                        {step === 2 && (
-                            <div className="panel">
-                                <div className="panel-title">Step 2 — Choose subjects</div>
-                                <div className="panel-subtitle">
-                                    Select one or many focal subjects. Partner is auto-detected from <code>partner_ID</code>.
-                                </div>
-
-                                {csvError && <div className="error-item">{csvError}</div>}
-
-                                <div className="inline-input-row" style={{ marginBottom: '0.75rem' }}>
-                                    <label className="label">
-                                        Dataset ID
-                                        <input
-                                            className="input-number"
-                                            type="text"
-                                            value={datasetId}
-                                            onChange={(e) => setDatasetId(e.target.value)}
-                                            style={{ width: '18rem' }}
-                                        />
-                                    </label>
-                                    <span className="small-text">Used in dataset_meta.json and as the downloaded zip name.</span>
-                                </div>
-
-                                <div style={{ marginBottom: '0.75rem' }}>
-                                    <ErrorList warnings={datasetWarnings} fileErrors={datasetFileErrors} />
-                                </div>
-
-                                {!manifest ? (
-                                    <div className="small-text">Select a dataset folder first.</div>
-                                ) : (
-                                    <>
-                                        <div className="small-text" style={{ marginBottom: '0.5rem' }}>
-                                            Identities: {manifest.identities.length} · Suggested subjects (focal=1): {manifest.identities.filter(isFocal).length}
-                                        </div>
-
-                                        <div className="table-wrapper">
-                                            <table>
-                                                <thead>
-                                                <tr>
-                                                    <th>Use</th>
-                                                    <th>Subject</th>
-                                                    <th>Partner</th>
-                                                    <th>Familiar with media</th>
-                                                    <th>Unfamiliar with media</th>
-                                                    <th>Status</th>
-                                                </tr>
-                                                </thead>
-                                                <tbody>
-                                                {subjectOptions.map((sid) => {
-                                                    const s = computePoolSummary(manifest, sid);
-                                                    const selected = selectedSubjectIds.includes(sid);
-                                                    const focal = isFocal(manifest.identities.find((e) => e.id === sid)!);
-                                                    const hasErrors = s.errors.length > 0;
-                                                    return (
-                                                        <tr key={sid}>
-                                                            <td>
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={selected}
-                                                                    onChange={() => onToggleSubject(sid)}
-                                                                />
-                                                            </td>
-                                                            <td>{sid}{focal ? ' (focal)' : ''}</td>
-                                                            <td>{s.partnerId || '—'}</td>
-                                                            <td>{s.familiarWithMedia}</td>
-                                                            <td>{s.unfamiliarWithMedia}</td>
-                                                            <td className={hasErrors ? '' : 'muted'}>
-                                                                {hasErrors ? s.errors.join(' ') : 'OK'}
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-
-                                        <div className="inline-input-row" style={{ marginTop: '0.75rem' }}>
-                                            <button
-                                                className="button button-primary"
-                                                onClick={() => setStep(3)}
-                                                disabled={selectedSubjectIds.length === 0 || datasetFileErrors.length > 0 || !!csvError}
-                                            >
-                                                Continue to tuning
-                                            </button>
-                                            {datasetFileErrors.length > 0 && (
-                                                <span className="small-text">Fix strict file errors before continuing.</span>
-                                            )}
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        )}
-
-                        {step === 3 && (
-                            <div className="panel">
-                                <div className="panel-title">Step 3 — Trial generation tuning (multi-subject)</div>
-                                <div className="panel-subtitle">
-                                    One global seed deterministically derives per-subject seeds. You can override any subject seed if needed.
-                                </div>
-
-                                <div className="small-text" style={{ marginBottom: '0.75rem' }}>
-                                    Each trial presents one call (audio) and a 2-choice display: partner face vs one other face. The correct response is to select the face matching the call identity (partner vs non-partner).
-                                    Total trials is per subject. Familiar fraction controls the fraction of calls coming from identities marked <code>familiar</code> (including the partner). Partner fraction within familiar splits familiar-call trials into partner vs familiar-non-partner calls.
-                                </div>
-
-                                <div className="inline-input-row" style={{ marginBottom: '0.75rem' }}>
-                                    <label className="label">
-                                        Total trials
-                                        <input
-                                            className="input-number"
-                                            type="number"
-                                            min={1}
-                                            value={totalTrials}
-                                            onChange={(e) => setTotalTrials(Math.max(1, Number(e.target.value)))}
-                                        />
-                                    </label>
-
-                                    <label className="label">
-                                        Familiar fraction
-                                        <input
-                                            className="input-number"
-                                            type="number"
-                                            min={0}
-                                            max={1}
-                                            step={0.05}
-                                            value={familiarFraction}
-                                            onChange={(e) => {
-                                                const v = Number(e.target.value);
-                                                if (v >= 0 && v <= 1) setFamiliarFraction(v);
-                                            }}
-                                        />
-                                    </label>
-
-                                    <label className="label">
-                                        Partner fraction within familiar
-                                        <input
-                                            className="input-number"
-                                            type="number"
-                                            min={0}
-                                            max={1}
-                                            step={0.05}
-                                            value={partnerFractionWithinFamiliar}
-                                            onChange={(e) => {
-                                                const v = Number(e.target.value);
-                                                if (v >= 0 && v <= 1) setPartnerFractionWithinFamiliar(v);
-                                            }}
-                                        />
-                                    </label>
-
-                                    <label className="label">
-                                        Global seed
-                                        <input
-                                            className="input-number"
-                                            type="text"
-                                            value={globalSeed}
-                                            onChange={(e) => setGlobalSeed(e.target.value)}
-                                            style={{ width: '10rem' }}
-                                        />
-                                    </label>
-                                </div>
-
-                                <div className="small-text" style={{ marginBottom: '0.75rem' }}>
-                                    Balance partner side makes the partner face appear left/right equally often (in a randomized order). Avoid repeat audio–image pairings tries to avoid reusing the same audio exemplar together with the same face exemplar for a given identity, reducing fixed pairing learning.
-                                </div>
-
-                                <div className="inline-input-row" style={{ marginBottom: '0.75rem' }}>
-                                    <label className="label">
-                                        <input type="checkbox" checked={balanceSides} onChange={(e) => setBalanceSides(e.target.checked)} />{' '}
-                                        Balance partner side
-                                    </label>
-                                    <label className="label">
-                                        <input type="checkbox" checked={avoidRepeatPairings} onChange={(e) => setAvoidRepeatPairings(e.target.checked)} />{' '}
-                                        Avoid repeat audio–image pairings
-                                    </label>
-                                </div>
-
-                                <div className="panel" style={{ padding: '0.75rem', marginBottom: '0.75rem' }}>
-                                    <div className="panel-title">Per-subject seeds</div>
-                                    <div className="small-text" style={{ marginBottom: '0.5rem' }}>
-                                        Derived seed is <code>{'{globalSeed}::{subjectId}'}</code> unless an override is set.
-                                    </div>
-
-                                    <div className="table-wrapper">
-                                        <table>
-                                            <thead>
-                                            <tr>
-                                                <th>Subject</th>
-                                                <th>Derived seed</th>
-                                                <th>Override (optional)</th>
-                                            </tr>
-                                            </thead>
-                                            <tbody>
-                                            {selectedSubjectIds.map((sid) => (
-                                                <tr key={sid}>
-                                                    <td>{sid}</td>
-                                                    <td><code>{derivedSeeds[sid]}</code></td>
-                                                    <td>
-                                                        <input
-                                                            className="input-number"
-                                                            type="text"
-                                                            value={perSubjectOverrides[sid] || ''}
-                                                            onChange={(e) => {
-                                                                const v = e.target.value;
-                                                                setPerSubjectOverrides((prev) => ({ ...prev, [sid]: v }));
-                                                            }}
-                                                            style={{ width: '18rem' }}
-                                                            placeholder="Leave empty to use derived seed"
-                                                        />
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-
-                                <div className="inline-input-row">
-                                    <button className="button" onClick={() => setStep(2)}>
-                                        Back
-                                    </button>
-                                    <button className="button button-primary" onClick={onGenerateTrials}>
-                                        Generate trials + validate media
-                                    </button>
-                                    <span className="small-text">
-                                        This step is strict: any generation failure or missing media blocks bundle creation.
-                                    </span>
-                                </div>
-
-                                {generationErrors.length > 0 && (
-                                    <div style={{ marginTop: '0.75rem' }}>
-                                        <div className="label">Strict errors:</div>
-                                        <ul className="error-list">
-                                            {generationErrors.map((e, idx) => (
-                                                <li key={idx} className="error-item">{e}</li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {step === 4 && (
-                            <>
-                                <div className="panel" style={{ marginBottom: '0.75rem' }}>
-                                    <div className="panel-title">Step 4 — Visual explorer + validation</div>
-                                    <div className="panel-subtitle">
-                                        Explore generated trials per subject, preview images and WAV audio, and review warnings/errors.
-                                    </div>
-
-                                    <div className="inline-input-row">
-                                        <button className="button" onClick={() => setStep(3)}>
-                                            Back to tuning
-                                        </button>
-                                        <button className="button button-primary" onClick={() => setStep(5)} disabled={generationErrors.length > 0}>
-                                            Continue to download
-                                        </button>
-                                    </div>
-
-                                    {generationErrors.length > 0 && (
-                                        <div className="error-item" style={{ marginTop: '0.5rem' }}>
-                                            Fix strict errors before continuing.
-                                        </div>
-                                    )}
-                                </div>
-
-                                <BundleExplorer
-                                    trialSets={trialSets}
-                                    resolveMediaFile={resolveBuildMediaFile}
-                                    strictErrors={generationErrors}
-                                    warnings={generationWarnings}
+            {step === 2 ? (
+                <PageSection
+                    title="Subject selection"
+                    description="Keep the default focal subjects unless you need a different subset. Review partner and pool status before moving on."
+                    action={<ContextHelpButton topicId="subject-eligibility" onOpen={onOpenHelp} label="Help" />}
+                >
+                    <Stack spacing={2}>
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} md={6}>
+                                <TextField
+                                    fullWidth
+                                    label="Dataset ID"
+                                    value={datasetId}
+                                    onChange={(event) => setDatasetId(event.target.value)}
+                                    helperText="Used in dataset_meta.json and as the downloaded zip name."
                                 />
-                            </>
-                        )}
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ height: '100%', alignItems: 'center' }}>
+                                    <Button variant="outlined" onClick={() => selectSubjects(focalSubjectIds.length > 0 ? focalSubjectIds : subjectOptions)}>
+                                        Select recommended
+                                    </Button>
+                                    <Button variant="outlined" onClick={() => selectSubjects([])}>
+                                        Clear all
+                                    </Button>
+                                </Stack>
+                            </Grid>
+                        </Grid>
 
-                        {step === 5 && (
-                            <div className="panel">
-                                <div className="panel-title">Step 5 — Download bundle zip</div>
-                                <div className="panel-subtitle">
-                                    The zip contains: <code>dataset_meta.json</code>, <code>manifest.json</code>, <code>trial_sets/&lt;subject&gt;/trials.json</code> (+ CSV), and <code>media/images</code> + <code>media/audio</code>.
-                                </div>
+                        <ErrorList warnings={datasetWarnings} fileErrors={datasetFileErrors} />
+                        <ValidationSummary errors={subjectSelectionStrictErrors} />
 
-                                <div className="inline-input-row">
-                                    <button className="button" onClick={() => setStep(4)}>
-                                        Back to explorer
-                                    </button>
-                                    <button className="button button-primary" onClick={onDownloadZip} disabled={!manifest || generationErrors.length > 0 || !Object.keys(trialSets).length}>
-                                        Download bundle zip
-                                    </button>
-                                    <span className="small-text">
-                                        This is strict: missing media, duplicates, or path issues fail the build.
-                                    </span>
-                                </div>
+                        {manifest ? (
+                            <TableContainer>
+                                <Table size="small">
+                                    <TableHead>
+                                        <TableRow>
+                                            <TableCell>Use</TableCell>
+                                            <TableCell>Subject</TableCell>
+                                            <TableCell>Partner</TableCell>
+                                            <TableCell>Familiar with media</TableCell>
+                                            <TableCell>Unfamiliar with media</TableCell>
+                                            <TableCell>Status</TableCell>
+                                        </TableRow>
+                                    </TableHead>
+                                    <TableBody>
+                                        {subjectOptions.map((subjectId) => {
+                                            const summary = computePoolSummary(manifest, subjectId);
+                                            const selected = selectedSubjectIds.includes(subjectId);
+                                            const focal = isFocal(manifest.identities.find((entry) => entry.id === subjectId)!);
+                                            const blocking = summary.errors.length > 0;
 
-                                {generationErrors.length > 0 && (
-                                    <div style={{ marginTop: '0.75rem' }}>
-                                        <div className="label">Strict errors:</div>
-                                        <ul className="error-list">
-                                            {generationErrors.map((e, idx) => (
-                                                <li key={idx} className="error-item">{e}</li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                )}
+                                            return (
+                                                <TableRow key={subjectId} hover>
+                                                    <TableCell padding="checkbox">
+                                                        <Checkbox checked={selected} onChange={() => onToggleSubject(subjectId)} />
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <Stack direction="row" spacing={1} alignItems="center">
+                                                            <span>{subjectId}</span>
+                                                            {focal ? <Chip label="Focal" size="small" color="primary" variant="outlined" /> : null}
+                                                        </Stack>
+                                                    </TableCell>
+                                                    <TableCell>{summary.partnerId || '—'}</TableCell>
+                                                    <TableCell>{summary.familiarWithMedia}</TableCell>
+                                                    <TableCell>{summary.unfamiliarWithMedia}</TableCell>
+                                                    <TableCell>
+                                                        {blocking ? (
+                                                            <Alert severity="error" sx={{ py: 0 }}>
+                                                                {summary.errors.join(' ')}
+                                                            </Alert>
+                                                        ) : (
+                                                            <Chip label="Ready" size="small" color="success" variant="outlined" />
+                                                        )}
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </TableContainer>
+                        ) : null}
 
-                                {manifest && (
-                                    <div className="small-text" style={{ marginTop: '0.75rem' }}>
-                                        Subjects in bundle: <strong>{selectedSubjectIds.join(', ')}</strong>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </>
-                )}
-            </section>
-        </div>
+                        <Stack direction="row" spacing={1}>
+                            <Button variant="outlined" onClick={() => setStep(1)}>
+                                Back
+                            </Button>
+                            <Button
+                                variant="contained"
+                                onClick={() => setStep(3)}
+                                disabled={selectedSubjectIds.length === 0 || datasetFileErrors.length > 0 || Boolean(csvError)}
+                            >
+                                Continue to settings
+                            </Button>
+                        </Stack>
+                    </Stack>
+                </PageSection>
+            ) : null}
+
+            {step === 3 ? (
+                <PageSection
+                    title="Generation settings"
+                    description="Keep defaults unless the experiment design needs a different count split or deterministic seed override."
+                    action={<ContextHelpButton topicId="generation-settings" onOpen={onOpenHelp} label="Help" />}
+                >
+                    <Stack spacing={3}>
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} md={3}>
+                                <TextField
+                                    fullWidth
+                                    type="number"
+                                    label="Total trials"
+                                    value={totalTrials}
+                                    onChange={(event) => setTotalTrials(Math.max(1, Number(event.target.value)))}
+                                    inputProps={{ min: 1 }}
+                                    helperText="Per subject."
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={3}>
+                                <TextField
+                                    fullWidth
+                                    type="number"
+                                    label="Familiar fraction"
+                                    value={familiarFraction}
+                                    onChange={(event) => {
+                                        const value = Number(event.target.value);
+                                        if (value >= 0 && value <= 1) setFamiliarFraction(value);
+                                    }}
+                                    inputProps={{ min: 0, max: 1, step: 0.05 }}
+                                    helperText="Share of trials with familiar calls."
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={3}>
+                                <TextField
+                                    fullWidth
+                                    type="number"
+                                    label="Partner fraction within familiar"
+                                    value={partnerFractionWithinFamiliar}
+                                    onChange={(event) => {
+                                        const value = Number(event.target.value);
+                                        if (value >= 0 && value <= 1) setPartnerFractionWithinFamiliar(value);
+                                    }}
+                                    inputProps={{ min: 0, max: 1, step: 0.05 }}
+                                    helperText="How much of the familiar set should be partner calls."
+                                />
+                            </Grid>
+                            <Grid item xs={12} md={3}>
+                                <TextField
+                                    fullWidth
+                                    label="Global seed"
+                                    value={globalSeed}
+                                    onChange={(event) => setGlobalSeed(event.target.value)}
+                                    helperText="Deterministic across subjects."
+                                />
+                            </Grid>
+                        </Grid>
+
+                        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+                            <FormControlLabel
+                                control={<Checkbox checked={balanceSides} onChange={(event) => setBalanceSides(event.target.checked)} />}
+                                label="Balance partner side"
+                            />
+                            <FormControlLabel
+                                control={<Checkbox checked={avoidRepeatPairings} onChange={(event) => setAvoidRepeatPairings(event.target.checked)} />}
+                                label="Avoid repeat audio-image pairings"
+                            />
+                        </Stack>
+
+                        <Accordion expanded={advancedSettingsExpanded} onChange={(_, expanded) => setAdvancedSettingsExpanded(expanded)}>
+                            <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}>
+                                <Stack direction="row" spacing={1} alignItems="center">
+                                    <Typography variant="subtitle1">Advanced settings</Typography>
+                                    <ContextHelpButton topicId="generation-settings" onOpen={onOpenHelp} label="What does this mean?" compact />
+                                </Stack>
+                            </AccordionSummary>
+                            <AccordionDetails>
+                                <Stack spacing={2}>
+                                    <Typography variant="body2" color="text.secondary">
+                                        Override a derived subject seed only when you need a subject-specific deterministic sequence.
+                                    </Typography>
+                                    <TableContainer>
+                                        <Table size="small">
+                                            <TableHead>
+                                                <TableRow>
+                                                    <TableCell>Subject</TableCell>
+                                                    <TableCell>Derived seed</TableCell>
+                                                    <TableCell>Override</TableCell>
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {selectedSubjectIds.map((subjectId) => (
+                                                    <TableRow key={subjectId}>
+                                                        <TableCell>{subjectId}</TableCell>
+                                                        <TableCell>{derivedSeeds[subjectId]}</TableCell>
+                                                        <TableCell>
+                                                            <TextField
+                                                                fullWidth
+                                                                size="small"
+                                                                value={perSubjectOverrides[subjectId] || ''}
+                                                                onChange={(event) => {
+                                                                    const value = event.target.value;
+                                                                    setPerSubjectOverrides((prev) => ({ ...prev, [subjectId]: value }));
+                                                                }}
+                                                                placeholder="Leave empty to use the derived seed"
+                                                            />
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
+                                </Stack>
+                            </AccordionDetails>
+                        </Accordion>
+
+                        <ValidationSummary errors={generationErrors} warnings={generationWarnings} />
+
+                        <Stack direction="row" spacing={1}>
+                            <Button variant="outlined" onClick={() => setStep(2)}>
+                                Back
+                            </Button>
+                            <Button variant="contained" startIcon={<PlayArrowRoundedIcon />} onClick={onGenerateTrials}>
+                                Generate trials
+                            </Button>
+                        </Stack>
+                    </Stack>
+                </PageSection>
+            ) : null}
+
+            {step === 4 ? (
+                <PageSection
+                    title="Preview and validation"
+                    description="Inspect the generated trial sets before export. Use filters and preview media to confirm the bundle looks correct."
+                    action={<ContextHelpButton topicId="bundle-explorer" onOpen={onOpenHelp} label="Help" />}
+                    compact
+                >
+                    <Stack spacing={2}>
+                        <ValidationSummary errors={generationErrors} warnings={generationWarnings} />
+                        <Stack direction="row" spacing={1}>
+                            <Button variant="outlined" onClick={() => setStep(3)}>
+                                Back to settings
+                            </Button>
+                            <Button variant="contained" onClick={() => setStep(5)} disabled={generationErrors.length > 0}>
+                                Continue to export
+                            </Button>
+                        </Stack>
+
+                        <BundleExplorer
+                            trialSets={trialSets}
+                            resolveMediaFile={(path) => previewMediaByPath.get(path) || null}
+                            strictErrors={generationErrors}
+                            warnings={generationWarnings}
+                            persistenceKey={storageKeys.buildPreviewSession}
+                        />
+                    </Stack>
+                </PageSection>
+            ) : null}
+
+            {step === 5 ? (
+                <PageSection
+                    title="Export"
+                    description="Export only after the preview is clean. The zip contains dataset metadata, trial sets, and the referenced media."
+                    action={<ContextHelpButton topicId="validation-errors" onOpen={onOpenHelp} label="Help" />}
+                >
+                    <Stack spacing={2}>
+                        <ValidationSummary errors={generationErrors} warnings={generationWarnings} />
+                        <Stack direction="row" spacing={1}>
+                            <Button variant="outlined" onClick={() => setStep(4)}>
+                                Back to preview
+                            </Button>
+                            <Button
+                                variant="contained"
+                                startIcon={<DownloadRoundedIcon />}
+                                onClick={onDownloadZip}
+                                disabled={!manifest || generationErrors.length > 0 || !Object.keys(trialSets).length}
+                            >
+                                Download bundle zip
+                            </Button>
+                        </Stack>
+                        {manifest ? (
+                            <Alert severity="info">
+                                Subjects in bundle: {selectedSubjectIds.join(', ')}
+                            </Alert>
+                        ) : null}
+                    </Stack>
+                </PageSection>
+            ) : null}
+        </Stack>
     );
 };
 

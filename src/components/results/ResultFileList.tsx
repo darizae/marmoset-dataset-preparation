@@ -1,3 +1,15 @@
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import {
+    IconButton,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Tooltip,
+    Typography
+} from '@mui/material';
 import React from 'react';
 import { ParsedResultFile } from '../../domain/resultsTypes';
 
@@ -8,47 +20,46 @@ interface Props {
 
 const ResultFileList: React.FC<Props> = ({ files, onRemove }) => {
     if (!files.length) {
-        return <div className="small-text">No result files loaded yet.</div>;
+        return <Typography variant="body2" color="text.secondary">No result files loaded yet.</Typography>;
     }
 
     return (
-        <div className="table-wrapper">
-            <table>
-                <thead>
-                <tr>
-                    <th>File</th>
-                    <th>Format</th>
-                    <th>Subject(s)</th>
-                    <th>Session(s)</th>
-                    <th>Total rows</th>
-                    <th>Eligible</th>
-                </tr>
-                </thead>
-                <tbody>
-                {files.map((f) => (
-                    <tr key={f.fileName}>
-                        <td>
-                            {f.fileName}
-                            {onRemove && (
-                                <button
-                                    className="button"
-                                    style={{ marginLeft: '0.5rem', fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
-                                    onClick={() => onRemove(f.fileName)}
-                                >
-                                    Remove
-                                </button>
-                            )}
-                        </td>
-                        <td>{f.format}</td>
-                        <td>{f.subjects.join(', ') || '—'}</td>
-                        <td>{f.sessionIds.join(', ') || '—'}</td>
-                        <td>{f.totalRows}</td>
-                        <td>{f.eligibleRows}</td>
-                    </tr>
-                ))}
-                </tbody>
-            </table>
-        </div>
+        <TableContainer>
+            <Table size="small">
+                <TableHead>
+                    <TableRow>
+                        <TableCell>File</TableCell>
+                        <TableCell>Format</TableCell>
+                        <TableCell>Subjects</TableCell>
+                        <TableCell>Sessions</TableCell>
+                        <TableCell>Total rows</TableCell>
+                        <TableCell>Eligible</TableCell>
+                        <TableCell align="right">Action</TableCell>
+                    </TableRow>
+                </TableHead>
+                <TableBody>
+                    {files.map((file) => (
+                        <TableRow key={file.fileName}>
+                            <TableCell>{file.fileName}</TableCell>
+                            <TableCell>{file.format}</TableCell>
+                            <TableCell>{file.subjects.join(', ') || '—'}</TableCell>
+                            <TableCell>{file.sessionIds.join(', ') || '—'}</TableCell>
+                            <TableCell>{file.totalRows}</TableCell>
+                            <TableCell>{file.eligibleRows}</TableCell>
+                            <TableCell align="right">
+                                {onRemove ? (
+                                    <Tooltip title="Remove file">
+                                        <IconButton aria-label={`Remove ${file.fileName}`} onClick={() => onRemove(file.fileName)}>
+                                            <DeleteOutlineRoundedIcon />
+                                        </IconButton>
+                                    </Tooltip>
+                                ) : null}
+                            </TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+        </TableContainer>
     );
 };
 

@@ -1,3 +1,6 @@
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
+import { Alert, AlertTitle, List, ListItem, ListItemText, Stack, Typography } from '@mui/material';
 import React from 'react';
 import { DatasetWarning, FileError } from '../../domain/types';
 
@@ -12,42 +15,42 @@ const ErrorList: React.FC<Props> = ({ warnings, fileErrors }) => {
 
     if (!hasWarnings && !hasErrors) {
         return (
-            <div className="small-text" style={{ marginTop: '0.5rem' }}>
-                No warnings or file-level errors so far.
-            </div>
+            <Typography variant="body2" color="text.secondary">
+                No warnings or file-level errors detected.
+            </Typography>
         );
     }
 
     return (
-        <div style={{ marginTop: '0.75rem' }}>
+        <Stack spacing={2}>
             {hasWarnings && (
-                <div>
-                    <div className="label">Warnings (non-fatal, but important):</div>
-                    <ul className="warning-list">
-                        {warnings.map((w, idx) => (
-                            <li key={idx} className="warning-item">
-                                {w.message}
-                            </li>
+                <Alert severity="warning" icon={<WarningAmberRoundedIcon />}>
+                    <AlertTitle>Warnings</AlertTitle>
+                    <List dense disablePadding>
+                        {warnings.map((warning, idx) => (
+                            <ListItem key={`${warning.message}-${idx}`} disableGutters>
+                                <ListItemText primary={warning.message} />
+                            </ListItem>
                         ))}
-                    </ul>
-                </div>
+                    </List>
+                </Alert>
             )}
             {hasErrors && (
-                <div style={{ marginTop: '0.75rem' }}>
-                    <div className="label">File naming / parsing errors (strict):</div>
-                    <ul className="error-list">
-                        {fileErrors.map((e, idx) => (
-                            <li key={idx} className="error-item">
-                                <strong>{e.relativePath}</strong>: {e.message}
-                            </li>
+                <Alert severity="error" icon={<ErrorOutlineRoundedIcon />}>
+                    <AlertTitle>Strict file errors</AlertTitle>
+                    <List dense disablePadding>
+                        {fileErrors.map((error, idx) => (
+                            <ListItem key={`${error.relativePath}-${idx}`} disableGutters>
+                                <ListItemText primary={`${error.relativePath}: ${error.message}`} />
+                            </ListItem>
                         ))}
-                    </ul>
-                    <div className="small-text">
-                        Fix these file names or remove the offending files, then re-run processing.
-                    </div>
-                </div>
+                    </List>
+                    <Typography variant="body2" sx={{ mt: 1 }}>
+                        Fix these files and reprocess the dataset before generating trials.
+                    </Typography>
+                </Alert>
             )}
-        </div>
+        </Stack>
     );
 };
 

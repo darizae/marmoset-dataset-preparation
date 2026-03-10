@@ -1,5 +1,5 @@
 import Papa from 'papaparse';
-import { ConditionLabel, ParsedResultFile, ResultRow, deriveCondition, Side } from './resultsTypes';
+import { ParsedResultFile, ResultRow, deriveCondition, Side } from './resultsTypes';
 
 function toBool(v: any): boolean | undefined {
     if (v === null || v === undefined || v === '') return undefined;

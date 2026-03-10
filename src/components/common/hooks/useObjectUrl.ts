@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 
 export function useObjectUrl(file: File | null, mimeType?: string): string | null {
     const stableKey = useMemo(() => {
@@ -6,22 +6,22 @@ export function useObjectUrl(file: File | null, mimeType?: string): string | nul
         return `${file.name}::${file.size}::${file.lastModified}`;
     }, [file]);
 
-    const [url, setUrl] = useState<string | null>(null);
-
-    useEffect(() => {
+    const url = useMemo(() => {
         if (!file || !stableKey) {
-            setUrl(null);
-            return;
+            return null;
         }
 
         const blob = mimeType ? new Blob([file], { type: mimeType }) : file;
-        const nextUrl = URL.createObjectURL(blob);
-        setUrl(nextUrl);
-
-        return () => {
-            URL.revokeObjectURL(nextUrl);
-        };
+        return URL.createObjectURL(blob);
     }, [file, stableKey, mimeType]);
+
+    useEffect(() => {
+        return () => {
+            if (url) {
+                URL.revokeObjectURL(url);
+            }
+        };
+    }, [url]);
 
     return url;
 }

@@ -5,7 +5,6 @@ import { generateTrials } from '../trialGenerator';
 import { BundleInMemory, BundleSeedPolicy, DatasetMeta } from './bundleTypes';
 import {
     assertSafeInternalPath,
-    fileNameFromPath,
     normalizeBundleAudioPath,
     normalizeBundleImagePath
 } from './bundleValidation';
@@ -60,32 +59,41 @@ export function buildSeedPolicyPerSubject(perSubjectSeeds: Record<string, string
     };
 }
 
-function buildMediaIndexByFileName(files: File[]): Map<string, File[]> {
-    const map = new Map<string, File[]>();
+function getRelativePath(file: File): string {
+    const fileWithRelativePath = file as File & { webkitRelativePath?: string };
+    if (typeof fileWithRelativePath.webkitRelativePath === 'string' && fileWithRelativePath.webkitRelativePath.length > 0) {
+        return fileWithRelativePath.webkitRelativePath;
+    }
+    return file.name;
+}
+
+function buildMediaIndexByRelativePath(files: File[]): Map<string, File> {
+    const map = new Map<string, File>();
     for (const f of files) {
-        const list = map.get(f.name) || [];
-        list.push(f);
-        map.set(f.name, list);
+        const relativePath = getRelativePath(f);
+        if (map.has(relativePath)) {
+            throw new Error(`Duplicate media path detected: "${relativePath}"`);
+        }
+        map.set(relativePath, f);
     }
     return map;
 }
 
-function findUniqueFileByName(index: Map<string, File[]>, fileName: string): File {
-    const list = index.get(fileName) || [];
-    if (list.length === 0) throw new Error(`Missing media file: "${fileName}"`);
-    if (list.length > 1) throw new Error(`Duplicate media filename detected (must be unique in bundle): "${fileName}"`);
-    return list[0];
+function findUniqueFileByRelativePath(index: Map<string, File>, relativePath: string): File {
+    const file = index.get(relativePath);
+    if (!file) throw new Error(`Missing media file: "${relativePath}"`);
+    return file;
 }
 
 export function normalizeManifestToBundlePaths(manifest: DatasetManifest): DatasetManifest {
     const identities = manifest.identities.map((e) => {
         const nextImages = e.imageExemplars.map((ex) => ({
             ...ex,
-            relativePath: normalizeBundleImagePath(ex.fileName)
+            relativePath: normalizeBundleImagePath(ex.relativePath, manifest.meta.dataDirLabel)
         }));
         const nextAudios = e.audioExemplars.map((ex) => ({
             ...ex,
-            relativePath: normalizeBundleAudioPath(ex.fileName)
+            relativePath: normalizeBundleAudioPath(ex.relativePath, manifest.meta.dataDirLabel)
         }));
         return {
             ...e,
@@ -101,13 +109,9 @@ export function normalizeManifestToBundlePaths(manifest: DatasetManifest): Datas
 
 export function normalizeTrialSetToBundlePaths(trialSet: TrialSet): TrialSet {
     const trials = trialSet.trials.map((t) => {
-        const audioFileName = fileNameFromPath(t.audio.path);
-        const leftFileName = fileNameFromPath(t.leftImage.path);
-        const rightFileName = fileNameFromPath(t.rightImage.path);
-
-        const audioPath = normalizeBundleAudioPath(audioFileName);
-        const leftPath = normalizeBundleImagePath(leftFileName);
-        const rightPath = normalizeBundleImagePath(rightFileName);
+        const audioPath = normalizeBundleAudioPath(t.audio.path, trialSet.meta.dataDirLabel);
+        const leftPath = normalizeBundleImagePath(t.leftImage.path, trialSet.meta.dataDirLabel);
+        const rightPath = normalizeBundleImagePath(t.rightImage.path, trialSet.meta.dataDirLabel);
 
         assertSafeInternalPath(audioPath);
         assertSafeInternalPath(leftPath);
@@ -137,8 +141,7 @@ export function generateMultiSubjectTrials(
     for (const subjectId of selectedSubjectIds) {
         const seed = deriveSubjectSeed(seedPolicy, subjectId);
         const cfg: TrialConfig = { ...baseConfig, seed };
-        const ts = generateTrials(manifest, subjectId, cfg);
-        out[subjectId] = normalizeTrialSetToBundlePaths(ts);
+        out[subjectId] = generateTrials(manifest, subjectId, cfg);
     }
     return out;
 }
@@ -155,35 +158,58 @@ function buildCounts(trialSets: Record<string, TrialSet>): { overallTrials: numb
 }
 
 function validateMediaReferencesStrict(
+    manifest: DatasetManifest,
     normalizedManifest: DatasetManifest,
+    sourceTrialSets: Record<string, TrialSet>,
     trialSets: Record<string, TrialSet>,
-    mediaIndexByFileName: Map<string, File[]>
+    mediaIndexByRelativePath: Map<string, File>
 ): Map<string, File> {
     const neededInternalPathToFile = new Map<string, File>();
+    const sourceIdentities = new Map(manifest.identities.map((identity) => [identity.id, identity]));
 
     for (const idEntry of normalizedManifest.identities) {
+        const sourceIdentity = sourceIdentities.get(idEntry.id);
+        if (!sourceIdentity) {
+            throw new Error(`Missing source manifest identity: "${idEntry.id}"`);
+        }
         for (const ex of idEntry.imageExemplars) {
             assertSafeInternalPath(ex.relativePath);
-            const f = findUniqueFileByName(mediaIndexByFileName, ex.fileName);
+            const sourceExemplar = sourceIdentity.imageExemplars.find((source) => source.index === ex.index);
+            if (!sourceExemplar) {
+                throw new Error(`Missing source image exemplar for "${idEntry.id}" index ${ex.index}.`);
+            }
+            const f = findUniqueFileByRelativePath(mediaIndexByRelativePath, sourceExemplar.relativePath);
             neededInternalPathToFile.set(ex.relativePath, f);
         }
         for (const ex of idEntry.audioExemplars) {
             assertSafeInternalPath(ex.relativePath);
-            const f = findUniqueFileByName(mediaIndexByFileName, ex.fileName);
+            const sourceExemplar = sourceIdentity.audioExemplars.find((source) => source.index === ex.index);
+            if (!sourceExemplar) {
+                throw new Error(`Missing source audio exemplar for "${idEntry.id}" index ${ex.index}.`);
+            }
+            const f = findUniqueFileByRelativePath(mediaIndexByRelativePath, sourceExemplar.relativePath);
             neededInternalPathToFile.set(ex.relativePath, f);
         }
     }
 
     for (const [subjectId, ts] of Object.entries(trialSets)) {
+        const sourceTrialSet = sourceTrialSets[subjectId];
+        if (!sourceTrialSet) {
+            throw new Error(`Missing source trial set for "${subjectId}".`);
+        }
         for (const t of ts.trials) {
+            const sourceTrial = sourceTrialSet.trials.find((trial) => trial.trialId === t.trialId);
+            if (!sourceTrial) {
+                throw new Error(`Missing source trial "${t.trialId}" for subject "${subjectId}".`);
+            }
             const refs = [
-                { kind: 'audio', path: t.audio.path, fileName: fileNameFromPath(t.audio.path) },
-                { kind: 'leftImage', path: t.leftImage.path, fileName: fileNameFromPath(t.leftImage.path) },
-                { kind: 'rightImage', path: t.rightImage.path, fileName: fileNameFromPath(t.rightImage.path) }
+                { path: t.audio.path, sourcePath: sourceTrial.audio.path },
+                { path: t.leftImage.path, sourcePath: sourceTrial.leftImage.path },
+                { path: t.rightImage.path, sourcePath: sourceTrial.rightImage.path }
             ];
             for (const r of refs) {
                 assertSafeInternalPath(r.path);
-                const f = findUniqueFileByName(mediaIndexByFileName, r.fileName);
+                const f = findUniqueFileByRelativePath(mediaIndexByRelativePath, r.sourcePath);
                 neededInternalPathToFile.set(r.path, f);
             }
         }
@@ -206,12 +232,21 @@ export function buildBundleInMemory(
 ): BundleInMemory {
     const created_at = new Date().toISOString();
     const normalizedManifest = normalizeManifestToBundlePaths(manifest);
+    const normalizedTrialSets = Object.fromEntries(
+        Object.entries(trialSets).map(([subjectId, trialSet]) => [subjectId, normalizeTrialSetToBundlePaths(trialSet)])
+    );
 
-    const mediaIndexByFileName = buildMediaIndexByFileName(datasetFiles);
-    const mediaByInternalPath = validateMediaReferencesStrict(normalizedManifest, trialSets, mediaIndexByFileName);
+    const mediaIndexByRelativePath = buildMediaIndexByRelativePath(datasetFiles);
+    const mediaByInternalPath = validateMediaReferencesStrict(
+        manifest,
+        normalizedManifest,
+        trialSets,
+        normalizedTrialSets,
+        mediaIndexByRelativePath
+    );
 
-    const subjects = Object.keys(trialSets).sort();
-    const counts = buildCounts(trialSets);
+    const subjects = Object.keys(normalizedTrialSets).sort();
+    const counts = buildCounts(normalizedTrialSets);
 
     const datasetMeta: DatasetMeta = {
         dataset_id: datasetId,
@@ -226,7 +261,7 @@ export function buildBundleInMemory(
     return {
         datasetMeta,
         manifest: normalizedManifest,
-        trialSets,
+        trialSets: normalizedTrialSets,
         mediaByInternalPath
     };
 }

@@ -1,178 +1,218 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
+import {
+    Alert,
+    Box,
+    Button,
+    FormControl,
+    InputLabel,
+    LinearProgress,
+    MenuItem,
+    Select,
+    Stack,
+    Typography
+} from '@mui/material';
+import React, { Suspense, useMemo, useState } from 'react';
 import ResultFileList from './ResultFileList';
 import { parseResultsCsv, parseResultsJsonl } from '../../domain/resultsParser';
 import { ParsedResultFile, ResultRow } from '../../domain/resultsTypes';
 import { computeCombinedMetrics } from '../../domain/resultsMetrics';
-import AccuracyBarChart from './charts/AccuracyBarChart';
+import PageSection from '../common/PageSection';
+import HelpHint from '../common/HelpHint';
+import MetricChips from '../common/MetricChips';
+import ContextHelpButton from '../help/ContextHelpButton';
+import { HelpTopicId } from '../help/helpTopics';
 import ResultsDetailView from './ResultsDetailView';
+import { aggregateResultIssues } from './resultsState';
+import { usePersistentState, useSessionState } from '../../persistence/hooks';
+import { storageKeys } from '../../persistence/keys';
+
+const AccuracyBarChart = React.lazy(() => import('./charts/AccuracyBarChart'));
 
 type UploadStatus = 'idle' | 'parsing' | 'done';
 
-const ResultsTab: React.FC = () => {
+interface Props {
+    onOpenHelp: (topicId: HelpTopicId) => void;
+}
+
+const ResultsTab: React.FC<Props> = ({ onOpenHelp }) => {
     const [status, setStatus] = useState<UploadStatus>('idle');
     const [files, setFiles] = useState<ParsedResultFile[]>([]);
-    const [errors, setErrors] = useState<string[]>([]);
-    const [warnings, setWarnings] = useState<string[]>([]);
-    const [selectedSubject, setSelectedSubject] = useState<string>('');
+    const [selectedSubject, setSelectedSubject] = useSessionState<string>(storageKeys.resultsSession, '');
+    const [uploadErrors, setUploadErrors] = useState<string[]>([]);
+    const [helpHintDismissed, setHelpHintDismissed] = usePersistentState<boolean>(`${storageKeys.appPreferences}.resultsHelpHintDismissed`, false);
 
-    const handleUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const issues = useMemo(() => aggregateResultIssues(files), [files]);
+
+    const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         setStatus('parsing');
         setFiles([]);
-        setErrors([]);
-        setWarnings([]);
         setSelectedSubject('');
-        const fl = e.target.files;
-        if (!fl || fl.length === 0) {
+        setUploadErrors([]);
+        const fileList = event.target.files;
+        if (!fileList || fileList.length === 0) {
             setStatus('idle');
             return;
         }
-        const arr = Array.from(fl);
+
+        const selectedFiles = Array.from(fileList);
         const parsed: ParsedResultFile[] = [];
-        const allWarnings: string[] = [];
-        const allErrors: string[] = [];
-        for (const file of arr) {
+        const uploadErrors: string[] = [];
+
+        for (const file of selectedFiles) {
             try {
                 const name = file.name.toLowerCase();
-                let res: ParsedResultFile;
                 if (name.endsWith('.csv')) {
-                    res = await parseResultsCsv(file);
+                    parsed.push(await parseResultsCsv(file));
                 } else if (name.endsWith('.jsonl')) {
-                    res = await parseResultsJsonl(file);
+                    parsed.push(await parseResultsJsonl(file));
                 } else {
-                    allErrors.push(`Unsupported file type for "${file.name}". Only CSV and JSONL are supported.`);
-                    continue;
+                    uploadErrors.push(`Unsupported file type for "${file.name}". Only CSV and JSONL are supported.`);
                 }
-                parsed.push(res);
-                if (res.warnings.length) {
-                    allWarnings.push(...res.warnings.map((w) => `${file.name}: ${w}`));
-                }
-                if (res.errors.length) {
-                    allErrors.push(...res.errors.map((er) => `${file.name}: ${er}`));
-                }
-            } catch (err: any) {
-                allErrors.push(`${file.name}: ${err?.message || String(err)}`);
+            } catch (error: any) {
+                uploadErrors.push(`${file.name}: ${error?.message || String(error)}`);
             }
         }
-        setFiles(parsed);
-        setWarnings(allWarnings);
-        setErrors(allErrors);
-        setStatus('done');
-        const subjects = Array.from(new Set(parsed.flatMap((f) => f.subjects))).sort();
-        setSelectedSubject(subjects[0] || '');
-    }, []);
 
-    const handleRemoveFile = useCallback((fileName: string) => {
-        const next = files.filter((f) => f.fileName !== fileName);
+        setUploadErrors(uploadErrors);
+        setFiles(parsed);
+        const subjects = Array.from(new Set(parsed.flatMap((file) => file.subjects))).sort();
+        setSelectedSubject(subjects[0] || '');
+        setStatus('done');
+    };
+
+    const handleRemoveFile = (fileName: string) => {
+        const next = files.filter((file) => file.fileName !== fileName);
         setFiles(next);
-        const subjects = Array.from(new Set(next.flatMap((f) => f.subjects))).sort();
+        const subjects = Array.from(new Set(next.flatMap((file) => file.subjects))).sort();
         if (!subjects.includes(selectedSubject)) {
             setSelectedSubject(subjects[0] || '');
         }
-    }, [files, selectedSubject]);
+    };
 
-    const allRows: ResultRow[] = useMemo(() => files.flatMap((f) => f.rows), [files]);
-
+    const allRows: ResultRow[] = useMemo(() => files.flatMap((file) => file.rows), [files]);
     const combined = useMemo(() => computeCombinedMetrics(allRows), [allRows]);
+    const subjects = useMemo(() => Array.from(new Set(allRows.map((row) => row.subject_id))).sort(), [allRows]);
+    const accuracies = useMemo(() => combined.subjects.map((subject) => subject.accuracy), [combined]);
 
-    const subjects = useMemo(() => Array.from(new Set(allRows.map((r) => r.subject_id))).sort(), [allRows]);
-
-    const accuracies = useMemo(() => {
-        return combined.subjects.map((m) => m.accuracy);
-    }, [combined]);
-
-    const clearAll = useCallback(() => {
+    const clearAll = () => {
         setStatus('idle');
         setFiles([]);
-        setWarnings([]);
-        setErrors([]);
         setSelectedSubject('');
-    }, []);
+        setUploadErrors([]);
+    };
 
     return (
-        <div>
-            <section className="section">
-                <div className="section-title">Upload result files (CSV or JSONL)</div>
-                <div className="section-subtitle">Multiple files supported. Each file is parsed independently; errors are shown per-file.</div>
-                <div className="inline-input-row">
-                    <input type="file" multiple accept=".csv,.jsonl" onChange={handleUpload} />
-                    <button className="button" onClick={clearAll}>Clear uploads</button>
-                    {status === 'parsing' && <span className="small-text">Parsing…</span>}
-                </div>
-                {errors.length > 0 && (
-                    <div style={{ marginTop: '0.5rem' }}>
-                        <div className="label">Errors:</div>
-                        <ul className="error-list">
-                            {errors.map((e, idx) => (
-                                <li key={idx} className="error-item">{e}</li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-                {warnings.length > 0 && (
-                    <div style={{ marginTop: '0.5rem' }}>
-                        <div className="label">Warnings:</div>
-                        <ul className="warning-list">
-                            {warnings.map((w, idx) => (
-                                <li key={idx} className="warning-item">{w}</li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-                <div style={{ marginTop: '0.75rem' }}>
+        <Stack spacing={3}>
+            <HelpHint visible={!helpHintDismissed} onDismiss={() => setHelpHintDismissed(true)} />
+
+            <PageSection
+                title="Upload files"
+                description="Load result files first. Each file is parsed independently so file-specific issues stay visible."
+                action={<ContextHelpButton topicId="results-upload" onOpen={onOpenHelp} label="Help" />}
+            >
+                <Stack spacing={2}>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                        <Button component="label" variant="contained" startIcon={<UploadFileRoundedIcon />}>
+                            Upload CSV or JSONL
+                            <input
+                                hidden
+                                data-testid="results-upload-input"
+                                type="file"
+                                multiple
+                                accept=".csv,.jsonl"
+                                onChange={handleUpload}
+                            />
+                        </Button>
+                        <Button variant="outlined" onClick={clearAll}>Clear uploads</Button>
+                    </Stack>
+
+                    {status === 'parsing' ? <LinearProgress /> : null}
+
+                    {uploadErrors.map((error) => (
+                        <Alert key={error} severity="error">{error}</Alert>
+                    ))}
+                    {issues.errors.map((error) => (
+                        <Alert key={error} severity="error">{error}</Alert>
+                    ))}
+                    {issues.warnings.map((warning) => (
+                        <Alert key={warning} severity="warning">{warning}</Alert>
+                    ))}
+
                     <ResultFileList files={files} onRemove={handleRemoveFile} />
-                </div>
-            </section>
+                </Stack>
+            </PageSection>
 
-            <section className="section">
-                <div className="section-title">Summary metrics across loaded files</div>
-                {files.length === 0 ? (
-                    <div className="small-text">Upload result files to see summary metrics and charts.</div>
+            <PageSection
+                title="Summary metrics"
+                description="Scan the overall totals first, then compare subject-level accuracy."
+                action={<ContextHelpButton topicId="results-upload" onOpen={onOpenHelp} label="Help" compact />}
+            >
+                {files.length === 0 || allRows.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                        Upload result files to see summary metrics and charts.
+                    </Typography>
                 ) : (
-                    <>
-                        <div className="inline-input-row">
-                            <span className="chip">Trials: {combined.overall.nTotal}</span>
-                            <span className="chip">Eligible: {combined.overall.nEligible}</span>
-                            <span className="chip">Correct: {combined.overall.nCorrect}</span>
-                            <span className="chip">Incorrect: {combined.overall.nIncorrect}</span>
-                            <span className="chip">Accuracy: {combined.overall.accuracy === null ? '—' : `${(combined.overall.accuracy * 100).toFixed(1)}%`}</span>
-                            <span className="chip">Mean latency: {combined.overall.latencyMean === null ? '—' : `${combined.overall.latencyMean.toFixed(3)} s`}</span>
-                            <span className="chip">Median latency: {combined.overall.latencyMedian === null ? '—' : `${combined.overall.latencyMedian.toFixed(3)} s`}</span>
-                        </div>
-                        <div style={{ marginTop: '0.75rem' }}>
-                            <AccuracyBarChart labels={combined.subjects.map((m) => m.subjectId)} accuracies={accuracies} />
-                        </div>
-                    </>
-                )}
-            </section>
+                    <Stack spacing={2}>
+                        <MetricChips
+                            items={[
+                                { label: 'Trials', value: combined.overall.nTotal },
+                                { label: 'Eligible', value: combined.overall.nEligible },
+                                { label: 'Correct', value: combined.overall.nCorrect },
+                                { label: 'Incorrect', value: combined.overall.nIncorrect },
+                                {
+                                    label: 'Accuracy',
+                                    value: combined.overall.accuracy === null ? '—' : `${(combined.overall.accuracy * 100).toFixed(1)}%`
+                                },
+                                {
+                                    label: 'Mean latency',
+                                    value: combined.overall.latencyMean === null ? '—' : `${combined.overall.latencyMean.toFixed(3)} s`
+                                },
+                                {
+                                    label: 'Median latency',
+                                    value: combined.overall.latencyMedian === null ? '—' : `${combined.overall.latencyMedian.toFixed(3)} s`
+                                }
+                            ]}
+                        />
 
-            <section className="section">
-                <div className="section-title">Detail view</div>
+                        <Suspense fallback={<LinearProgress />}>
+                            <AccuracyBarChart labels={combined.subjects.map((subject) => subject.subjectId)} accuracies={accuracies} />
+                        </Suspense>
+                    </Stack>
+                )}
+            </PageSection>
+
+            <PageSection
+                title="Subject detail"
+                description="Choose one detected subject to inspect per-condition accuracy and latency distributions."
+                action={<ContextHelpButton topicId="results-upload" onOpen={onOpenHelp} label="Help" compact />}
+            >
                 {subjects.length === 0 ? (
-                    <div className="small-text">No subjects detected yet.</div>
+                    <Typography variant="body2" color="text.secondary">
+                        No subjects detected yet.
+                    </Typography>
                 ) : (
-                    <>
-                        <div className="inline-input-row">
-                            <label className="label">
-                                Subject
-                                <select
-                                    className="input-number"
+                    <Stack spacing={2}>
+                        <Box sx={{ maxWidth: 320 }}>
+                            <FormControl fullWidth>
+                                <InputLabel id="subject-detail-label">Subject</InputLabel>
+                                <Select
+                                    labelId="subject-detail-label"
+                                    label="Subject"
                                     value={selectedSubject}
-                                    onChange={(e) => setSelectedSubject(e.target.value)}
+                                    onChange={(event) => setSelectedSubject(event.target.value)}
                                 >
-                                    {subjects.map((sid) => (
-                                        <option key={sid} value={sid}>{sid}</option>
+                                    {subjects.map((subjectId) => (
+                                        <MenuItem key={subjectId} value={subjectId}>{subjectId}</MenuItem>
                                     ))}
-                                </select>
-                            </label>
-                            <span className="small-text">Select a subject to view per-condition metrics and latency distribution.</span>
-                        </div>
-                        <div style={{ marginTop: '0.5rem' }}>
-                            {selectedSubject && <ResultsDetailView rows={allRows} subjectId={selectedSubject} />}
-                        </div>
-                    </>
+                                </Select>
+                            </FormControl>
+                        </Box>
+
+                        {selectedSubject ? <ResultsDetailView rows={allRows} subjectId={selectedSubject} /> : null}
+                    </Stack>
                 )}
-            </section>
-        </div>
+            </PageSection>
+        </Stack>
     );
 };
 

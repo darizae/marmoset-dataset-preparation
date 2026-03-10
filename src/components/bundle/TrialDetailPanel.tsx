@@ -1,3 +1,13 @@
+import {
+    Alert,
+    Box,
+    Card,
+    CardContent,
+    Chip,
+    Grid,
+    Stack,
+    Typography
+} from '@mui/material';
 import React, { useMemo } from 'react';
 import { Trial } from '../../domain/trialTypes';
 import { useObjectUrl } from '../common/hooks/useObjectUrl';
@@ -18,91 +28,97 @@ const TrialDetailPanel: React.FC<Props> = ({ trial, resolveMediaFile, focusedIde
     const rightUrl = useObjectUrl(rightImageFile);
     const audioUrl = useObjectUrl(audioFile, 'audio/wav');
 
-    const leftIsFocused = useMemo(() => {
-        if (!trial || !focusedIdentityId) return false;
-        return trial.leftImage.identityId === focusedIdentityId;
-    }, [trial, focusedIdentityId]);
-
-    const rightIsFocused = useMemo(() => {
-        if (!trial || !focusedIdentityId) return false;
-        return trial.rightImage.identityId === focusedIdentityId;
-    }, [trial, focusedIdentityId]);
+    const leftIsFocused = Boolean(trial && focusedIdentityId && trial.leftImage.identityId === focusedIdentityId);
+    const rightIsFocused = Boolean(trial && focusedIdentityId && trial.rightImage.identityId === focusedIdentityId);
 
     if (!trial) {
         return (
-            <div className="panel">
-                <div className="panel-title">Trial detail</div>
-                <div className="small-text">Select a trial in the table or graph to preview images and audio.</div>
-            </div>
+            <Card>
+                <CardContent>
+                    <Stack spacing={1}>
+                        <Typography variant="h6">Trial detail</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            Select a trial to preview the audio and paired face images.
+                        </Typography>
+                    </Stack>
+                </CardContent>
+            </Card>
         );
     }
 
     return (
-        <div className="panel">
-            <div className="panel-title">Trial detail</div>
-            <div className="small-text" style={{ marginBottom: '0.5rem' }}>
-                <span className="chip">#{trial.trialNumber}</span>
-                <span className="chip">call: {trial.callIdentityId}</span>
-                <span className="chip">{trial.isPartnerCall ? 'partner' : trial.callCategory}</span>
-                <span className="chip">partner side: {trial.partnerSide}</span>
-                <span className="chip">correct: {trial.correctSide}</span>
-                {focusedIdentityId && <span className="chip">focus: {focusedIdentityId}</span>}
-            </div>
-
-            {identityPreviewReason && (
-                <div className="small-text" style={{ marginBottom: '0.5rem' }}>
-                    {identityPreviewReason}
-                </div>
-            )}
-
-            <div className="small-text" style={{ marginBottom: '0.4rem' }}>
-                Audio: <code>{trial.audio.path}</code>
-            </div>
-            {audioUrl ? (
-                <audio controls preload="none" src={audioUrl} style={{ width: '100%' }} />
-            ) : (
-                <div className="error-item">Missing audio file for this trial.</div>
-            )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.75rem' }}>
-                <div>
-                    <div className="small-text" style={{ marginBottom: '0.25rem' }}>
-                        Left image: <code>{trial.leftImage.path}</code>
+        <Card>
+            <CardContent>
+                <Stack spacing={2}>
+                    <div>
+                        <Typography variant="h6">Trial detail</Typography>
+                        <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
+                            <Chip label={`#${trial.trialNumber}`} variant="outlined" />
+                            <Chip label={`Call: ${trial.callIdentityId}`} variant="outlined" />
+                            <Chip label={`Condition: ${trial.isPartnerCall ? 'partner' : trial.callCategory}`} variant="outlined" />
+                            <Chip label={`Partner side: ${trial.partnerSide}`} variant="outlined" />
+                            <Chip label={`Correct: ${trial.correctSide}`} variant="outlined" />
+                            {focusedIdentityId ? <Chip label={`Focus: ${focusedIdentityId}`} color="primary" variant="outlined" /> : null}
+                        </Stack>
                     </div>
-                    {leftUrl ? (
-                        <img
-                            src={leftUrl}
-                            alt="Left"
-                            style={{
-                                width: '100%',
-                                borderRadius: '0.5rem',
-                                border: leftIsFocused ? '2px solid #facc15' : '1px solid #1f2937'
-                            }}
-                        />
-                    ) : (
-                        <div className="error-item">Missing left image file.</div>
-                    )}
-                </div>
-                <div>
-                    <div className="small-text" style={{ marginBottom: '0.25rem' }}>
-                        Right image: <code>{trial.rightImage.path}</code>
-                    </div>
-                    {rightUrl ? (
-                        <img
-                            src={rightUrl}
-                            alt="Right"
-                            style={{
-                                width: '100%',
-                                borderRadius: '0.5rem',
-                                border: rightIsFocused ? '2px solid #facc15' : '1px solid #1f2937'
-                            }}
-                        />
-                    ) : (
-                        <div className="error-item">Missing right image file.</div>
-                    )}
-                </div>
-            </div>
-        </div>
+
+                    {identityPreviewReason ? <Alert severity="info">{identityPreviewReason}</Alert> : null}
+
+                    <Box>
+                        <Typography variant="subtitle2">Audio</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                            {trial.audio.path}
+                        </Typography>
+                        {audioUrl ? (
+                            <audio controls preload="none" src={audioUrl} style={{ width: '100%' }} />
+                        ) : (
+                            <Alert severity="error">Missing audio file for this trial.</Alert>
+                        )}
+                    </Box>
+
+                    <Grid container spacing={2}>
+                        {[
+                            {
+                                key: 'left',
+                                title: 'Left image',
+                                path: trial.leftImage.path,
+                                url: leftUrl,
+                                focused: leftIsFocused
+                            },
+                            {
+                                key: 'right',
+                                title: 'Right image',
+                                path: trial.rightImage.path,
+                                url: rightUrl,
+                                focused: rightIsFocused
+                            }
+                        ].map((item) => (
+                            <Grid key={item.key} item xs={12} md={6}>
+                                <Typography variant="subtitle2">{item.title}</Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                    {item.path}
+                                </Typography>
+                                {item.url ? (
+                                    <Box
+                                        component="img"
+                                        src={item.url}
+                                        alt={item.title}
+                                        sx={{
+                                            width: '100%',
+                                            borderRadius: 2,
+                                            border: 2,
+                                            borderColor: item.focused ? 'primary.main' : 'divider'
+                                        }}
+                                    />
+                                ) : (
+                                    <Alert severity="error">Missing image file.</Alert>
+                                )}
+                            </Grid>
+                        ))}
+                    </Grid>
+                </Stack>
+            </CardContent>
+        </Card>
     );
 };
 

@@ -1,9 +1,53 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import {
+    Alert,
+    Box,
+    Card,
+    CardContent,
+    Divider,
+    FormControl,
+    InputLabel,
+    MenuItem,
+    Select,
+    Stack,
+    Tab,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    Tabs,
+    Typography,
+    useMediaQuery,
+    useTheme
+} from '@mui/material';
+import React, { Suspense, useCallback, useMemo } from 'react';
 import { Trial, TrialSet } from '../../domain/trialTypes';
-import TrialGraphView from './TrialGraphView';
 import TrialDetailPanel from './TrialDetailPanel';
+import MetricChips from '../common/MetricChips';
+import ValidationSummary from '../common/ValidationSummary';
+import { resolveSelectedTrialId } from './explorerSelection';
+import { usePersistentState, useSessionState } from '../../persistence/hooks';
+import { storageKeys } from '../../persistence/keys';
 
 type ConditionLabel = 'partner' | 'familiar_non_partner' | 'unfamiliar' | 'unknown';
+type Side = 'left' | 'right';
+type MobilePanel = 'overview' | 'trials' | 'media';
+
+interface Props {
+    trialSets: Record<string, TrialSet>;
+    resolveMediaFile: (internalPath: string) => File | null;
+    strictErrors: string[];
+    warnings: string[];
+    persistenceKey: string;
+}
+
+type TrialPreviewPick = {
+    trialId: string | null;
+    reason: string | null;
+};
+
+const TrialGraphView = React.lazy(() => import('./TrialGraphView'));
 
 function deriveCondition(isPartnerCall: boolean, callCategory: string): ConditionLabel {
     if (isPartnerCall) return 'partner';
@@ -13,22 +57,8 @@ function deriveCondition(isPartnerCall: boolean, callCategory: string): Conditio
     return 'unknown';
 }
 
-type Side = 'left' | 'right';
-
-interface Props {
-    trialSets: Record<string, TrialSet>;
-    resolveMediaFile: (internalPath: string) => File | null;
-    strictErrors: string[];
-    warnings: string[];
-}
-
-type TrialPreviewPick = {
-    trialId: string | null;
-    reason: string | null;
-};
-
 function matchesFilters(
-    t: Trial,
+    trial: Trial,
     focusedIdentityId: string | null,
     conditionFilter: ConditionLabel | 'all',
     callIdentityFilter: string,
@@ -37,27 +67,26 @@ function matchesFilters(
 ): boolean {
     if (
         focusedIdentityId &&
-        t.otherIdentityId !== focusedIdentityId &&
-        t.callIdentityId !== focusedIdentityId &&
-        t.partnerId !== focusedIdentityId
+        trial.otherIdentityId !== focusedIdentityId &&
+        trial.callIdentityId !== focusedIdentityId &&
+        trial.partnerId !== focusedIdentityId
     ) {
         return false;
     }
-    if (conditionFilter !== 'all') {
-        const cond = deriveCondition(t.isPartnerCall, t.callCategory);
-        if (cond !== conditionFilter) return false;
+    if (conditionFilter !== 'all' && deriveCondition(trial.isPartnerCall, trial.callCategory) !== conditionFilter) {
+        return false;
     }
-    if (callIdentityFilter !== 'all' && t.callIdentityId !== callIdentityFilter) return false;
-    if (partnerSideFilter !== 'all' && t.partnerSide !== partnerSideFilter) return false;
-    if (correctSideFilter !== 'all' && t.correctSide !== correctSideFilter) return false;
+    if (callIdentityFilter !== 'all' && trial.callIdentityId !== callIdentityFilter) return false;
+    if (partnerSideFilter !== 'all' && trial.partnerSide !== partnerSideFilter) return false;
+    if (correctSideFilter !== 'all' && trial.correctSide !== correctSideFilter) return false;
     return true;
 }
 
 function pickTrialForIdentity(trials: Trial[], identityId: string): TrialPreviewPick {
-    const byCall = trials.find((t) => t.callIdentityId === identityId);
+    const byCall = trials.find((trial) => trial.callIdentityId === identityId);
     if (byCall) return { trialId: byCall.trialId, reason: null };
 
-    const byImage = trials.find((t) => t.leftImage.identityId === identityId || t.rightImage.identityId === identityId);
+    const byImage = trials.find((trial) => trial.leftImage.identityId === identityId || trial.rightImage.identityId === identityId);
     if (byImage) {
         return {
             trialId: byImage.trialId,
@@ -68,49 +97,63 @@ function pickTrialForIdentity(trials: Trial[], identityId: string): TrialPreview
     return { trialId: null, reason: 'No trials match this identity under the current filters.' };
 }
 
-const BundleExplorer: React.FC<Props> = ({ trialSets, resolveMediaFile, strictErrors, warnings }) => {
+const BundleExplorer: React.FC<Props> = ({ trialSets, resolveMediaFile, strictErrors, warnings, persistenceKey }) => {
+    const theme = useTheme();
+    const isDesktop = useMediaQuery(theme.breakpoints.up('xl'));
     const subjectIds = useMemo(() => Object.keys(trialSets).sort(), [trialSets]);
 
-    const [selectedSubjectId, setSelectedSubjectId] = useState<string>(subjectIds[0] || '');
-    const [selectedIdentityId, setSelectedIdentityId] = useState<string | null>(null);
-    const [selectedTrialId, setSelectedTrialId] = useState<string | null>(null);
-    const [selectedIdentityPreviewReason, setSelectedIdentityPreviewReason] = useState<string | null>(null);
+    const [selectedSubjectId, setSelectedSubjectId] = useSessionState<string>(`${persistenceKey}.subject`, subjectIds[0] || '');
+    const [selectedIdentityId, setSelectedIdentityId] = useSessionState<string | null>(`${persistenceKey}.identity`, null);
+    const [selectedTrialId, setSelectedTrialId] = useSessionState<string | null>(`${persistenceKey}.trial`, null);
+    const [selectedIdentityPreviewReason, setSelectedIdentityPreviewReason] = useSessionState<string | null>(`${persistenceKey}.reason`, null);
+    const [conditionFilter, setConditionFilter] = useSessionState<ConditionLabel | 'all'>(`${persistenceKey}.condition`, 'all');
+    const [callIdentityFilter, setCallIdentityFilter] = useSessionState<string>(`${persistenceKey}.callIdentity`, 'all');
+    const [partnerSideFilter, setPartnerSideFilter] = useSessionState<Side | 'all'>(`${persistenceKey}.partnerSide`, 'all');
+    const [correctSideFilter, setCorrectSideFilter] = useSessionState<Side | 'all'>(`${persistenceKey}.correctSide`, 'all');
+    const [mobilePanel, setMobilePanel] = usePersistentState<MobilePanel>(`${storageKeys.appPreferences}.previewPanel`, 'overview');
 
-    const [conditionFilter, setConditionFilter] = useState<ConditionLabel | 'all'>('all');
-    const [callIdentityFilter, setCallIdentityFilter] = useState<string>('all');
-    const [partnerSideFilter, setPartnerSideFilter] = useState<Side | 'all'>('all');
-    const [correctSideFilter, setCorrectSideFilter] = useState<Side | 'all'>('all');
-
-    const trialSet = selectedSubjectId ? trialSets[selectedSubjectId] : null;
+    const trialSet = selectedSubjectId && trialSets[selectedSubjectId] ? trialSets[selectedSubjectId] : trialSets[subjectIds[0]] || null;
 
     const callIdentityOptions = useMemo(() => {
         if (!trialSet) return [];
-        return Array.from(new Set(trialSet.trials.map((t) => t.callIdentityId))).sort();
+        return Array.from(new Set(trialSet.trials.map((trial) => trial.callIdentityId))).sort();
     }, [trialSet]);
 
     const filteredTrials = useMemo(() => {
         if (!trialSet) return [];
-        return trialSet.trials.filter((t) =>
-            matchesFilters(t, selectedIdentityId, conditionFilter, callIdentityFilter, partnerSideFilter, correctSideFilter)
+        return trialSet.trials.filter((trial) =>
+            matchesFilters(trial, selectedIdentityId, conditionFilter, callIdentityFilter, partnerSideFilter, correctSideFilter)
         );
     }, [trialSet, selectedIdentityId, conditionFilter, callIdentityFilter, partnerSideFilter, correctSideFilter]);
 
+    const activeTrialId = useMemo(
+        () => resolveSelectedTrialId(filteredTrials, selectedTrialId),
+        [filteredTrials, selectedTrialId]
+    );
+
     const selectedTrial = useMemo(() => {
-        if (!trialSet || !selectedTrialId) return null;
-        return trialSet.trials.find((t) => t.trialId === selectedTrialId) || null;
-    }, [trialSet, selectedTrialId]);
+        if (!trialSet || !activeTrialId) return null;
+        return filteredTrials.find((trial) => trial.trialId === activeTrialId) || null;
+    }, [activeTrialId, filteredTrials, trialSet]);
 
     const summary = useMemo(() => {
         if (!trialSet) return null;
         const counts: Record<ConditionLabel, number> = { partner: 0, familiar_non_partner: 0, unfamiliar: 0, unknown: 0 };
-        for (const t of trialSet.trials) {
-            counts[deriveCondition(t.isPartnerCall, t.callCategory)] += 1;
+        for (const trial of trialSet.trials) {
+            counts[deriveCondition(trial.isPartnerCall, trial.callCategory)] += 1;
         }
         return counts;
     }, [trialSet]);
 
-    const onSelectSubject = (sid: string) => {
-        setSelectedSubjectId(sid);
+    const validationCollapsed = useMemo(() => {
+        if (!strictErrors.length && !warnings.length) {
+            return null;
+        }
+        return `${strictErrors.length} blocking issue(s), ${warnings.length} warning(s)`;
+    }, [strictErrors.length, warnings.length]);
+
+    const onSelectSubject = (subjectId: string) => {
+        setSelectedSubjectId(subjectId);
         setSelectedIdentityId(null);
         setSelectedTrialId(null);
         setSelectedIdentityPreviewReason(null);
@@ -130,17 +173,19 @@ const BundleExplorer: React.FC<Props> = ({ trialSets, resolveMediaFile, strictEr
         }
 
         const eligibleTrials = trialSet.trials
-            .filter((t) => matchesFilters(t, identityId, conditionFilter, callIdentityFilter, partnerSideFilter, correctSideFilter))
-            .sort((a, b) => a.trialNumber - b.trialNumber);
+            .filter((trial) => matchesFilters(trial, identityId, conditionFilter, callIdentityFilter, partnerSideFilter, correctSideFilter))
+            .sort((left, right) => left.trialNumber - right.trialNumber);
 
         const pick = pickTrialForIdentity(eligibleTrials, identityId);
         setSelectedTrialId(pick.trialId);
         setSelectedIdentityPreviewReason(pick.reason);
-    }, [trialSet, conditionFilter, callIdentityFilter, partnerSideFilter, correctSideFilter]);
+        setMobilePanel('media');
+    }, [trialSet, conditionFilter, callIdentityFilter, partnerSideFilter, correctSideFilter, setMobilePanel, setSelectedIdentityId, setSelectedIdentityPreviewReason, setSelectedTrialId]);
 
-    const onSelectTrial = (t: Trial) => {
-        setSelectedTrialId(t.trialId);
+    const onSelectTrial = (trial: Trial) => {
+        setSelectedTrialId(trial.trialId);
         setSelectedIdentityPreviewReason(null);
+        setMobilePanel('media');
     };
 
     const clearFocus = () => {
@@ -150,201 +195,239 @@ const BundleExplorer: React.FC<Props> = ({ trialSets, resolveMediaFile, strictEr
     };
 
     if (!trialSet) {
-        return <div className="small-text">No trial sets available.</div>;
+        return <Alert severity="info">No trial sets available.</Alert>;
     }
 
-    return (
-        <div>
-            <div className="inline-input-row" style={{ marginBottom: '0.75rem' }}>
-                <label className="label">
-                    Subject
-                    <select
-                        className="input-number"
-                        value={selectedSubjectId}
-                        onChange={(e) => onSelectSubject(e.target.value)}
-                        style={{ width: '14rem' }}
+    const filterToolbar = (
+        <Stack spacing={1.5}>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'center' }}>
+                <FormControl sx={{ minWidth: 220 }}>
+                    <InputLabel id={`${persistenceKey}-subject-select-label`}>Subject</InputLabel>
+                    <Select
+                        labelId={`${persistenceKey}-subject-select-label`}
+                        label="Subject"
+                        value={trialSet.meta.subjectId}
+                        onChange={(event) => onSelectSubject(event.target.value)}
                     >
-                        {subjectIds.map((sid) => (
-                            <option key={sid} value={sid}>{sid}</option>
+                        {subjectIds.map((subjectId) => (
+                            <MenuItem key={subjectId} value={subjectId}>{subjectId}</MenuItem>
                         ))}
-                    </select>
-                </label>
+                    </Select>
+                </FormControl>
 
-                <span className="small-text">
-                    Partner: <strong>{trialSet.meta.partnerId}</strong> · Trials: <strong>{trialSet.trials.length}</strong>
-                </span>
-
-                {selectedIdentityId && (
-                    <span className="small-text">
-                        Focus: <strong>{selectedIdentityId}</strong> · Showing <strong>{filteredTrials.length}</strong>
-                        <button className="button" style={{ marginLeft: '0.5rem', fontSize: '0.8rem', padding: '0.25rem 0.6rem' }} onClick={clearFocus}>
-                            Clear focus
-                        </button>
-                    </span>
-                )}
-            </div>
-
-            <div className="split-pane">
-                <div>
-                    <TrialGraphView trialSet={trialSet} onSelectIdentity={onSelectIdentity} selectedIdentityId={selectedIdentityId} />
-
-                    <div className="panel" style={{ marginTop: '0.75rem' }}>
-                        <div className="panel-title">Filters</div>
-                        <div className="inline-input-row" style={{ marginBottom: '0.5rem' }}>
-                            <label className="label">
-                                Condition
-                                <select
-                                    className="input-number"
-                                    value={conditionFilter}
-                                    onChange={(e) => setConditionFilter(e.target.value as any)}
-                                    style={{ width: '14rem' }}
-                                >
-                                    <option value="all">All</option>
-                                    <option value="partner">partner</option>
-                                    <option value="familiar_non_partner">familiar_non_partner</option>
-                                    <option value="unfamiliar">unfamiliar</option>
-                                    <option value="unknown">unknown</option>
-                                </select>
-                            </label>
-
-                            <label className="label">
-                                Call identity
-                                <select
-                                    className="input-number"
-                                    value={callIdentityFilter}
-                                    onChange={(e) => setCallIdentityFilter(e.target.value)}
-                                    style={{ width: '14rem' }}
-                                >
-                                    <option value="all">All</option>
-                                    {callIdentityOptions.map((id) => (
-                                        <option key={id} value={id}>{id}</option>
-                                    ))}
-                                </select>
-                            </label>
-
-                            <label className="label">
-                                Partner side
-                                <select
-                                    className="input-number"
-                                    value={partnerSideFilter}
-                                    onChange={(e) => setPartnerSideFilter(e.target.value as any)}
-                                    style={{ width: '8rem' }}
-                                >
-                                    <option value="all">All</option>
-                                    <option value="left">left</option>
-                                    <option value="right">right</option>
-                                </select>
-                            </label>
-
-                            <label className="label">
-                                Correct side
-                                <select
-                                    className="input-number"
-                                    value={correctSideFilter}
-                                    onChange={(e) => setCorrectSideFilter(e.target.value as any)}
-                                    style={{ width: '8rem' }}
-                                >
-                                    <option value="all">All</option>
-                                    <option value="left">left</option>
-                                    <option value="right">right</option>
-                                </select>
-                            </label>
-                        </div>
-
-                        {summary && (
-                            <div className="small-text">
-                                <span className="chip">partner: {summary.partner}</span>
-                                <span className="chip">familiar_non_partner: {summary.familiar_non_partner}</span>
-                                <span className="chip">unfamiliar: {summary.unfamiliar}</span>
-                                <span className="chip">unknown: {summary.unknown}</span>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="panel" style={{ marginTop: '0.75rem' }}>
-                        <div className="panel-title">Trials</div>
-                        <div className="panel-subtitle">
-                            Click a row to preview the trial. The table shows up to 200 rows for snappy UI.
-                        </div>
-
-                        <div className="scroll-area">
-                            <table>
-                                <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>Call</th>
-                                    <th>Cond</th>
-                                    <th>Other</th>
-                                    <th>Partner side</th>
-                                    <th>Correct</th>
-                                </tr>
-                                </thead>
-                                <tbody>
-                                {filteredTrials.slice(0, 200).map((t) => {
-                                    const cond = deriveCondition(t.isPartnerCall, t.callCategory);
-                                    const active = selectedTrialId === t.trialId;
-                                    return (
-                                        <tr
-                                            key={t.trialId}
-                                            style={{ cursor: 'pointer', background: active ? '#0b1120' : undefined }}
-                                            onClick={() => onSelectTrial(t)}
-                                            title={t.trialId}
-                                        >
-                                            <td>{t.trialNumber}</td>
-                                            <td>{t.callIdentityId}</td>
-                                            <td>{cond}</td>
-                                            <td>{t.otherIdentityId}</td>
-                                            <td>{t.partnerSide}</td>
-                                            <td>{t.correctSide}</td>
-                                        </tr>
-                                    );
-                                })}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div className="small-text" style={{ marginTop: '0.5rem' }}>
-                            Showing {Math.min(200, filteredTrials.length)} / {filteredTrials.length}
-                        </div>
-                    </div>
-
-                    {(strictErrors.length > 0 || warnings.length > 0) && (
-                        <div className="panel" style={{ marginTop: '0.75rem' }}>
-                            <div className="panel-title">Validation</div>
-
-                            {strictErrors.length > 0 && (
-                                <div style={{ marginBottom: '0.75rem' }}>
-                                    <div className="label">Strict errors (must fix):</div>
-                                    <ul className="error-list">
-                                        {strictErrors.map((e, idx) => (
-                                            <li key={idx} className="error-item">{e}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-
-                            {warnings.length > 0 && (
-                                <div>
-                                    <div className="label">Warnings (non-fatal):</div>
-                                    <ul className="warning-list">
-                                        {warnings.map((w, idx) => (
-                                            <li key={idx} className="warning-item">{w}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-
-                <TrialDetailPanel
-                    trial={selectedTrial}
-                    resolveMediaFile={resolveMediaFile}
-                    focusedIdentityId={selectedIdentityId}
-                    identityPreviewReason={selectedIdentityPreviewReason}
+                <MetricChips
+                    items={[
+                        { label: 'Partner', value: trialSet.meta.partnerId },
+                        { label: 'Trials', value: trialSet.trials.length },
+                        { label: 'Visible', value: filteredTrials.length }
+                    ]}
                 />
-            </div>
-        </div>
+            </Stack>
+
+            {selectedIdentityId ? (
+                <Alert
+                    severity="info"
+                    action={
+                        <Box component="button" onClick={clearFocus} sx={{ border: 0, bgcolor: 'transparent', color: 'primary.main', cursor: 'pointer' }}>
+                            Clear focus
+                        </Box>
+                    }
+                >
+                    Focused identity: {selectedIdentityId}
+                </Alert>
+            ) : null}
+
+            {validationCollapsed ? (
+                <Alert severity={strictErrors.length > 0 ? 'error' : 'warning'}>
+                    {validationCollapsed}
+                </Alert>
+            ) : null}
+        </Stack>
+    );
+
+    const filterControls = (
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} useFlexGap flexWrap="wrap">
+            <FormControl sx={{ minWidth: 180 }}>
+                <InputLabel id={`${persistenceKey}-condition-filter-label`}>Condition</InputLabel>
+                <Select
+                    labelId={`${persistenceKey}-condition-filter-label`}
+                    label="Condition"
+                    value={conditionFilter}
+                    onChange={(event) => setConditionFilter(event.target.value as ConditionLabel | 'all')}
+                >
+                    <MenuItem value="all">All</MenuItem>
+                    <MenuItem value="partner">Partner</MenuItem>
+                    <MenuItem value="familiar_non_partner">Familiar non-partner</MenuItem>
+                    <MenuItem value="unfamiliar">Unfamiliar</MenuItem>
+                    <MenuItem value="unknown">Unknown</MenuItem>
+                </Select>
+            </FormControl>
+
+            <FormControl sx={{ minWidth: 180 }}>
+                <InputLabel id={`${persistenceKey}-call-filter-label`}>Call identity</InputLabel>
+                <Select
+                    labelId={`${persistenceKey}-call-filter-label`}
+                    label="Call identity"
+                    value={callIdentityFilter}
+                    onChange={(event) => setCallIdentityFilter(event.target.value)}
+                >
+                    <MenuItem value="all">All</MenuItem>
+                    {callIdentityOptions.map((id) => (
+                        <MenuItem key={id} value={id}>{id}</MenuItem>
+                    ))}
+                </Select>
+            </FormControl>
+
+            <FormControl sx={{ minWidth: 140 }}>
+                <InputLabel id={`${persistenceKey}-partner-side-filter-label`}>Partner side</InputLabel>
+                <Select
+                    labelId={`${persistenceKey}-partner-side-filter-label`}
+                    label="Partner side"
+                    value={partnerSideFilter}
+                    onChange={(event) => setPartnerSideFilter(event.target.value as Side | 'all')}
+                >
+                    <MenuItem value="all">All</MenuItem>
+                    <MenuItem value="left">Left</MenuItem>
+                    <MenuItem value="right">Right</MenuItem>
+                </Select>
+            </FormControl>
+
+            <FormControl sx={{ minWidth: 140 }}>
+                <InputLabel id={`${persistenceKey}-correct-side-filter-label`}>Correct side</InputLabel>
+                <Select
+                    labelId={`${persistenceKey}-correct-side-filter-label`}
+                    label="Correct side"
+                    value={correctSideFilter}
+                    onChange={(event) => setCorrectSideFilter(event.target.value as Side | 'all')}
+                >
+                    <MenuItem value="all">All</MenuItem>
+                    <MenuItem value="left">Left</MenuItem>
+                    <MenuItem value="right">Right</MenuItem>
+                </Select>
+            </FormControl>
+        </Stack>
+    );
+
+    const overviewContent = (
+        <Card>
+            <CardContent sx={{ p: 2.5 }}>
+                <Stack spacing={2}>
+                    <Stack spacing={0.5}>
+                        <Typography variant="h6">Identity relationship view</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            Keep the graph in view while scanning trials and previewing media.
+                        </Typography>
+                    </Stack>
+                    <Suspense fallback={<Typography variant="body2">Loading graph…</Typography>}>
+                        <TrialGraphView trialSet={trialSet} onSelectIdentity={onSelectIdentity} selectedIdentityId={selectedIdentityId} />
+                    </Suspense>
+                    {summary ? (
+                        <MetricChips
+                            items={[
+                                { label: 'Partner', value: summary.partner },
+                                { label: 'Familiar non-partner', value: summary.familiar_non_partner },
+                                { label: 'Unfamiliar', value: summary.unfamiliar },
+                                { label: 'Unknown', value: summary.unknown }
+                            ]}
+                        />
+                    ) : null}
+                </Stack>
+            </CardContent>
+        </Card>
+    );
+
+    const trialsContent = (
+        <Card>
+            <CardContent sx={{ p: 2.5 }}>
+                <Stack spacing={2}>
+                    <Stack spacing={0.75}>
+                        <Typography variant="h6">Trial browser</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                            Filters stay compact so the graph and media remain visible.
+                        </Typography>
+                    </Stack>
+                    {filterControls}
+                    <Divider />
+                    <TableContainer sx={{ maxHeight: isDesktop ? 420 : 360 }}>
+                        <Table stickyHeader size="small">
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell>#</TableCell>
+                                    <TableCell>Call</TableCell>
+                                    <TableCell>Condition</TableCell>
+                                    <TableCell>Other</TableCell>
+                                    <TableCell>Partner side</TableCell>
+                                    <TableCell>Correct</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {filteredTrials.slice(0, 200).map((trial) => (
+                                    <TableRow
+                                        key={trial.trialId}
+                                        hover
+                                        selected={activeTrialId === trial.trialId}
+                                        onClick={() => onSelectTrial(trial)}
+                                        sx={{ cursor: 'pointer' }}
+                                    >
+                                        <TableCell>{trial.trialNumber}</TableCell>
+                                        <TableCell>{trial.callIdentityId}</TableCell>
+                                        <TableCell>{deriveCondition(trial.isPartnerCall, trial.callCategory)}</TableCell>
+                                        <TableCell>{trial.otherIdentityId}</TableCell>
+                                        <TableCell>{trial.partnerSide}</TableCell>
+                                        <TableCell>{trial.correctSide}</TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                    <Typography variant="body2" color="text.secondary">
+                        Showing {Math.min(200, filteredTrials.length)} of {filteredTrials.length} filtered trials.
+                    </Typography>
+                </Stack>
+            </CardContent>
+        </Card>
+    );
+
+    const mediaContent = (
+        <Box sx={{ position: { xl: 'sticky' }, top: { xl: 24 }, alignSelf: 'flex-start' }}>
+            <TrialDetailPanel
+                trial={selectedTrial}
+                resolveMediaFile={resolveMediaFile}
+                focusedIdentityId={selectedIdentityId}
+                identityPreviewReason={activeTrialId === selectedTrialId ? selectedIdentityPreviewReason : null}
+            />
+        </Box>
+    );
+
+    return (
+        <Stack spacing={2.5}>
+            {filterToolbar}
+
+            {isDesktop ? (
+                <Stack direction="row" spacing={2.5} alignItems="flex-start">
+                    <Stack spacing={2} sx={{ flex: 1.35, minWidth: 0 }}>
+                        {overviewContent}
+                        {trialsContent}
+                        <ValidationSummary errors={strictErrors} warnings={warnings} />
+                    </Stack>
+                    <Box sx={{ flex: 0.95, minWidth: 380 }}>
+                        {mediaContent}
+                    </Box>
+                </Stack>
+            ) : (
+                <Stack spacing={2}>
+                    <Tabs value={mobilePanel} onChange={(_, value: MobilePanel) => setMobilePanel(value)} variant="fullWidth">
+                        <Tab label="Overview" value="overview" />
+                        <Tab label="Trials" value="trials" />
+                        <Tab label="Media" value="media" />
+                    </Tabs>
+                    {mobilePanel === 'overview' ? overviewContent : null}
+                    {mobilePanel === 'trials' ? trialsContent : null}
+                    {mobilePanel === 'media' ? mediaContent : null}
+                    <ValidationSummary errors={strictErrors} warnings={warnings} />
+                </Stack>
+            )}
+        </Stack>
     );
 };
 

@@ -1,3 +1,4 @@
+import { Box, useTheme } from '@mui/material';
 import React, { useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import { TrialSet } from '../../domain/trialTypes';
@@ -36,6 +37,7 @@ type EdgePoint = {
 };
 
 const TrialGraphView: React.FC<Props> = ({ trialSet, onSelectIdentity, selectedIdentityId }) => {
+    const theme = useTheme();
     const graph = useMemo(() => {
         const partnerId = trialSet.meta.partnerId;
 
@@ -100,11 +102,11 @@ const TrialGraphView: React.FC<Props> = ({ trialSet, onSelectIdentity, selectedI
             customdata: graph.nodes.map((n) => n.label),
             marker: {
                 size: graph.nodes.map((n) => n.size),
-                color: graph.nodes.map((n) => (n.isPartner ? '#22c55e' : '#38bdf8')),
-                line: { width: 2, color: graph.nodes.map((n) => (selectedIdentityId === n.id ? '#facc15' : '#0b1120')) }
+                color: graph.nodes.map((n) => (n.isPartner ? theme.palette.secondary.main : theme.palette.primary.light)),
+                line: { width: 2, color: graph.nodes.map((n) => (selectedIdentityId === n.id ? theme.palette.primary.dark : theme.palette.divider)) }
             }
         } as const;
-    }, [graph.nodes, selectedIdentityId]);
+    }, [graph.nodes, selectedIdentityId, theme.palette.divider, theme.palette.primary.dark, theme.palette.primary.light, theme.palette.secondary.main]);
 
     const edgeLineTraces = useMemo(() => {
         const traces: any[] = [];
@@ -116,11 +118,11 @@ const TrialGraphView: React.FC<Props> = ({ trialSet, onSelectIdentity, selectedI
                 x: [0, node.x],
                 y: [0, node.y],
                 hoverinfo: 'skip',
-                line: { width: 2, color: '#334155' }
+                line: { width: 2, color: theme.palette.divider }
             });
         }
         return traces;
-    }, [graph.nodes]);
+    }, [graph.nodes, theme.palette.divider]);
 
     const edgeHitTrace = useMemo(() => {
         return {
@@ -160,11 +162,7 @@ const TrialGraphView: React.FC<Props> = ({ trialSet, onSelectIdentity, selectedI
     };
 
     return (
-        <div className="panel">
-            <div className="panel-title">Identity relationship view</div>
-            <div className="panel-subtitle">
-                Click a node (or a link midpoint) to focus the trial list on that identity. Partner is centered.
-            </div>
+        <Box>
             <Plot
                 data={[...edgeLineTraces, nodeTrace, edgeHitTrace]}
                 layout={{
@@ -172,9 +170,9 @@ const TrialGraphView: React.FC<Props> = ({ trialSet, onSelectIdentity, selectedI
                     margin: { l: 30, r: 30, t: 10, b: 20 },
                     xaxis: { visible: false },
                     yaxis: { visible: false },
-                    paper_bgcolor: '#020617',
-                    plot_bgcolor: '#020617',
-                    font: { color: '#e5e7eb' },
+                    paper_bgcolor: theme.palette.background.paper,
+                    plot_bgcolor: theme.palette.background.paper,
+                    font: { color: theme.palette.text.primary },
                     showlegend: false
                 }}
                 config={{ displayModeBar: false, responsive: true }}
@@ -182,7 +180,7 @@ const TrialGraphView: React.FC<Props> = ({ trialSet, onSelectIdentity, selectedI
                 style={{ width: '100%' }}
                 useResizeHandler
             />
-        </div>
+        </Box>
     );
 };
 

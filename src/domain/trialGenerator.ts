@@ -127,7 +127,7 @@ function computeCounts(total: number, familiarFraction: number, partnerFractionW
     partner: number;
 }): { nPartner: number; nFamiliarNonPartner: number; nUnfamiliar: number; warnings: TrialGenerationWarning[] } {
     const warnings: TrialGenerationWarning[] = [];
-    let nFamiliar = Math.round(total * familiarFraction);
+    const nFamiliar = Math.round(total * familiarFraction);
     let nUnfamiliar = total - nFamiliar;
     let nPartner = Math.round(nFamiliar * partnerFractionWithinFamiliar);
     let nFamiliarNonPartner = nFamiliar - nPartner;

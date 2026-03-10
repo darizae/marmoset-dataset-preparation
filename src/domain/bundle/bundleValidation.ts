@@ -22,12 +22,25 @@ export function fileNameFromPath(path: string): string {
     return idx === -1 ? path : path.slice(idx + 1);
 }
 
-export function normalizeBundleImagePath(fileName: string): string {
-    return `media/images/${fileName}`;
+function stripSourceRoot(relativePath: string, sourceRootLabel: string): string {
+    const prefix = `${sourceRootLabel}/`;
+    if (relativePath.startsWith(prefix)) {
+        return relativePath.slice(prefix.length);
+    }
+    return relativePath;
 }
 
-export function normalizeBundleAudioPath(fileName: string): string {
-    return `media/audio/${fileName}`;
+function normalizeBundleMediaPath(kind: 'images' | 'audio', relativePath: string, sourceRootLabel: string): string {
+    const normalizedRelativePath = stripSourceRoot(relativePath, sourceRootLabel);
+    return `media/${kind}/${normalizedRelativePath}`;
+}
+
+export function normalizeBundleImagePath(relativePath: string, sourceRootLabel: string): string {
+    return normalizeBundleMediaPath('images', relativePath, sourceRootLabel);
+}
+
+export function normalizeBundleAudioPath(relativePath: string, sourceRootLabel: string): string {
+    return normalizeBundleMediaPath('audio', relativePath, sourceRootLabel);
 }
 
 export function validateDatasetMetaShape(meta: unknown): DatasetMeta {

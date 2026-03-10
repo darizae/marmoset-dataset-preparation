@@ -4,7 +4,6 @@ import {
     Card,
     CardContent,
     Chip,
-    Grid,
     Stack,
     Typography
 } from '@mui/material';
@@ -76,7 +75,13 @@ const TrialDetailPanel: React.FC<Props> = ({ trial, resolveMediaFile, focusedIde
                         )}
                     </Box>
 
-                    <Grid container spacing={2}>
+                    <Box
+                        sx={{
+                            display: 'grid',
+                            gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+                            gap: 2
+                        }}
+                    >
                         {[
                             {
                                 key: 'left',
@@ -93,7 +98,7 @@ const TrialDetailPanel: React.FC<Props> = ({ trial, resolveMediaFile, focusedIde
                                 focused: rightIsFocused
                             }
                         ].map((item) => (
-                            <Grid key={item.key} item xs={12} md={6}>
+                            <Box key={item.key}>
                                 <Typography variant="subtitle2">{item.title}</Typography>
                                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                                     {item.path}
@@ -104,7 +109,11 @@ const TrialDetailPanel: React.FC<Props> = ({ trial, resolveMediaFile, focusedIde
                                         src={item.url}
                                         alt={item.title}
                                         sx={{
+                                            display: 'block',
                                             width: '100%',
+                                            maxHeight: 280,
+                                            objectFit: 'contain',
+                                            backgroundColor: 'background.default',
                                             borderRadius: 2,
                                             border: 2,
                                             borderColor: item.focused ? 'primary.main' : 'divider'
@@ -113,9 +122,9 @@ const TrialDetailPanel: React.FC<Props> = ({ trial, resolveMediaFile, focusedIde
                                 ) : (
                                     <Alert severity="error">Missing image file.</Alert>
                                 )}
-                            </Grid>
+                            </Box>
                         ))}
-                    </Grid>
+                    </Box>
                 </Stack>
             </CardContent>
         </Card>

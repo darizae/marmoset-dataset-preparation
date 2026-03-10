@@ -166,7 +166,7 @@ const TrialGraphView: React.FC<Props> = ({ trialSet, onSelectIdentity, selectedI
             <Plot
                 data={[...edgeLineTraces, nodeTrace, edgeHitTrace]}
                 layout={{
-                    height: 440,
+                    height: 320,
                     margin: { l: 30, r: 30, t: 10, b: 20 },
                     xaxis: { visible: false },
                     yaxis: { visible: false },
